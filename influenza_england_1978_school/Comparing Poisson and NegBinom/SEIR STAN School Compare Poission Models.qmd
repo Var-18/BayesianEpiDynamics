@@ -1,0 +1,99 @@
+---
+title: "SEIR Model Analysis"
+format: 
+  html: 
+    df-print: paged
+    embed-resources: true
+---
+```{r, message=FALSE}
+library(outbreaks)
+library(tidyverse)
+library(rstan)
+library(gridExtra)
+library(loo)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r}
+glimpse(influenza_england_1978_school)
+```
+
+```{r}
+# time series of cases
+cases <- influenza_england_1978_school$in_bed  # Number of students in bed
+
+# total count
+N <- 763
+
+# times
+n_days <- length(cases)
+t <- seq(0, n_days, by = 1)
+t0 = 0 
+t <- t[-1]
+
+# initial conditions
+i0 <- 1
+e0 <- 2  # Assuming some exposed individuals initially
+s0 <- N - i0 - e0
+r0 <- 0
+y0 = c(S = s0, E = e0, I = i0, R = r0)
+
+# data for Stan
+data_seir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+# number of MCMC steps
+niter <- 2000
+```
+
+```{r}
+# Compile the models
+model1 <- stan_model("SEIR_School_POIS.stan")
+#model2 <- stan_model("SEIR_School_QuassiPoission.stan") #
+model2 <- stan_model("SEIR_School.stan")# NEgbinom
+```
+
+```{r}
+# Fit the models
+fit_pois <- sampling(model1, data = data_seir, iter = niter, chains = 4, seed = 0)
+fit_qp <- sampling(model2, data = data_seir, iter = niter, chains = 4, seed = 0)
+
+# Parameters to be printed
+pars <- c('beta', 'sigma', 'gamma', "R0", "incubation_period", "recovery_time")
+
+# Print the summary of the fitted models
+print(fit_pois, pars = pars)
+print(fit_qp, pars = pars)
+
+# Density plots for the parameters
+stan_dens(fit_pois, pars = pars, separate_chains = TRUE)
+stan_dens(fit_qp, pars = pars, separate_chains = TRUE)
+```
+
+```{r}
+# Summarize predicted cases for both models
+smr_pred_pois <- cbind(as.data.frame(summary(
+  fit_pois, pars = "pred_cases", probs = c(0.05, 0.5, 0.95))$summary), t, cases)
+colnames(smr_pred_pois) <- make.names(colnames(smr_pred_pois))
+
+smr_pred_qp <- cbind(as.data.frame(summary(
+  fit_qp, pars = "pred_cases", probs = c(0.05, 0.5, 0.95))$summary), t, cases)
+colnames(smr_pred_qp) <- make.names(colnames(smr_pred_qp))
+
+# Plot predicted cases for both models
+ggplot(smr_pred_pois, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'red', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'red') + 
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of students in bed")
+```
+```{r}
+ggplot(smr_pred_qp, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'blue', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'blue') + 
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of students in bed")
+```
+
+
+
