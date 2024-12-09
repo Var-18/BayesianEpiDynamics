@@ -1,0 +1,255 @@
+---
+title: "MLE Approach"
+format:
+  html: 
+    df_print: kable
+    toc: true
+    toc-depth: 6
+    toc-location: left
+    toc_float: true
+    df-print: kable
+    math: true
+    number_section: true 
+    page-layout: full
+    embed-resources: true
+---
+
+Data Preparation: The data should have two columns:
+
+date: Date column of type Date.
+cases: Numeric column representing the daily number of new infected individuals.
+SIR Model Function:
+
+This function computes the rates of change for Susceptible (S), Infected (I), and Recovered (R) compartments based on the current state and model parameters.
+Sum of Squared Errors (SSE) Function:
+
+This function is used to calculate the fit of the model to the actual data by computing the sum of the squared differences between the observed data and the model's predictions.
+Parameter Optimization:
+
+Uses optimization techniques to find the best-fit parameters (beta and gamma) that minimize the SSE, meaning they provide the best match between the model predictions and actual data.
+Simulation and Plotting:
+
+After determining the best-fit parameters, the SIR model is simulated over the observed period to generate predictions. These predictions are then plotted alongside the actual data to visually assess the fit.
+
+
+
+
+```{r}
+# Load required libraries
+library(deSolve)
+library(tidyverse)
+library(outbreaks)
+```
+
+
+```{r}
+# Access the dataset
+data(influenza_england_1978_school)
+flu_data <- influenza_england_1978_school
+
+flu_data <-flu_data %>%  select(date:in_bed) %>% rename(cases = in_bed )
+flu_data
+```
+
+
+```{r}
+# Define the SIR model function
+closed.sir.model <- function(t, x, params) {
+  S <- x[1]
+  I <- x[2]
+  R <- x[3]
+  beta <- params[1]
+  gamma <- params[2]
+  N <- params[3]  # Total population
+  dS <- -beta * S * I / N
+  dI <- beta * S * I / N - gamma * I
+  dR <- gamma * I
+  return(list(c(dS, dI, dR)))
+}
+
+# Sum of Squared Errors (SSE) function
+sse.sir <- function(params0, data, N) {
+  times <- as.numeric(data$date - min(data$date)) + 1
+  cases <- data$cases
+  I0 <- cases[1]  # Initial number of infected individuals
+  S0 <- N - I0  # Initial number of susceptible individuals
+  R0 <- 0  # Initial number of recovered individuals
+
+  # Simulate the model
+  out <- as.data.frame(ode(y = c(S = S0, I = I0, R = R0), times = times, func = closed.sir.model, parms = c(beta = params0[1], gamma = params0[2], N), hmax = 0.1))
+  sse <- sum((out$I - cases)^2)
+  return(sse)
+}
+
+# Main function to fit SIR model and plot results
+fit_and_plot_sir <- function(data, N, initial_params = c(1.5e-3, 0.44)) {
+  # Optimization using Nelder-Mead method
+  fit <- optim(par = initial_params, fn = function(params) sse.sir(params, data, N), method = "Nelder-Mead")
+
+  # Generate predictions using the optimized parameters
+  days <- as.numeric(data$date - min(data$date)) + 1
+  model_output <- as.data.frame(ode(y = c(S = N - data$cases[1], I = data$cases[1], R = 0), times = days, func = closed.sir.model, parms = c(fit$par, N), hmax = 0.1))
+ # Print optimized parameters beta and gamma
+  cat(sprintf("Optimized beta: %f\nOptimized gamma: %f\n", fit$par[1], fit$par[2]))
+
+  # Plot actual vs. predicted
+  ggplot() +
+    geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+    geom_point(data = data, aes(x = days, y = cases, colour = "Actual"), size = 2) +
+    labs(title = "Actual vs. Predicted Infected Individuals",
+         x = "Day from Start",
+         y = "Number of Infected Individuals") +
+    scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+    theme_minimal()
+}
+
+
+```
+
+Model Definition: Define the SIR model dynamics in the closed.sir.model function.
+Error Function: Implement the SSE function sse.sir that calculates the sum of squared errors between observed cases and model predictions.
+Model Fitting: Fit the SIR model to data using the optim function with Nelder-Mead optimization in fit_and_plot_sir.
+Prediction and Plotting: Generate and plot model predictions alongside actual data for visual comparison.
+
+
+```{r}
+fit_and_plot_sir(flu_data,763)
+```
+
+
+
+```{r}
+
+  # SEIR model definition
+  seir.model <- function(t, x, params) {
+    S <- x[1]
+    E <- x[2]
+    I <- x[3]
+    R <- x[4]
+    beta <- params[1]
+    sigma <- params[2]  # Rate of movement from E to I (incubation rate)
+    gamma <- params[3]
+    N <- params[4]  # Total population
+  
+    dS <- -beta * S * I / N
+    dE <- beta * S * I / N - sigma * E
+    dI <- sigma * E - gamma * I
+    dR <- gamma * I
+    return(list(c(dS, dE, dI, dR)) )
+  }
+  
+  # Sum of Squared Errors (SSE) function for SEIR
+  sse.seir <- function(params0, data, N) {
+    times <- as.numeric(data$date - min(data$date)) + 1
+    cases <- data$cases
+    E0 <- 0   # Initial number of exposed individuals
+    I0 <- cases[1]  # Initial number of infectious individuals
+    S0 <- N - I0 - E0  # Initial number of susceptible individuals
+    R0 <- 0  # Initial number of recovered individuals
+  
+    # Simulate the model
+    out <- as.data.frame(ode(y = c(S = S0, E = E0, I = I0, R = R0), times = times, func = seir.model, parms = c(beta = params0[1], sigma = params0[2], gamma = params0[3], N), hmax = 0.1))
+    sse <- sum((out$I - cases)^2)
+    return(sse)
+  }
+  
+  # Main function to fit SEIR model and plot results
+  fit_and_plot_seir <- function(data, N, initial_params = c(0.5, 1/3,  0.56 )) {
+    # Optimization using Nelder-Mead method
+    fit <- optim(par = initial_params, fn = function(params) sse.seir(params, data, N), method = "Nelder-Mead")
+    
+    # Print optimized parameters beta, sigma, and gamma
+    cat(sprintf("Optimized beta: %f, sigma: %f, gamma: %f\n", fit$par[1], fit$par[2], fit$par[3]))
+  
+    # Generate predictions using the optimized parameters
+    days <- as.numeric(data$date - min(data$date)) + 1
+    model_output <- as.data.frame(ode(y = c(S = N - data$cases[1], E = 0, I = data$cases[1], R = 0), times = days, func = seir.model, parms = c(fit$par, N), hmax = 0.1))
+  
+    # Plot actual vs. predicted
+    ggplot() +
+      geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+      geom_point(data = data, aes(x = days, y = cases, colour = "Actual"), size = 2) +
+      labs(title = "Actual vs. Predicted Infected Individuals (SEIR Model)",
+           x = "Day from Start",
+           y = "Number of Infected Individuals") +
+      scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+      theme_minimal()
+  }
+
+
+```
+
+### Model Definition
+- Define the SEIR model dynamics in the `seir.model` function, with compartments for Susceptible (S), Exposed (E), Infected (I), and Recovered (R).
+- The function uses parameters for transmission rate (`beta`), incubation rate (`sigma`), and recovery rate (`gamma`), applied to a population of size `N`.
+
+### Error Function
+- Implement the SSE function `sse.seir` to calculate the sum of squared errors between observed cases and model predictions.
+- This function takes initial conditions based on the first data point and simulates the disease progression to compare with actual data.
+
+### Model Fitting
+- Fit the SEIR model to data using the `optim` function with Nelder-Mead optimization in `fit_and_plot_seir`.
+- Initial parameters for the optimization can be adjusted based on preliminary data analysis or literature values.
+
+### Prediction and Plotting
+- Generate predictions using the optimized parameters and compare these predictions to the actual data.
+- Plot the actual vs. predicted number of infected individuals for visual comparison, using `ggplot2` for graphical output.
+- The plot distinguishes between predicted and actual data using different colors and includes the essential plot labels and a minimalistic theme.
+
+```{r}
+fit_and_plot_seir(flu_data,763)
+
+```
+Why dont the estimates make sense?
+
+
+1. Nonlinearity and Complexity of the Model
+The SEIR model involves nonlinear dynamics, which can make the optimization landscape complex with multiple local minima. A least squares optimization might converge to one of these local minima that doesn't represent the global best fit, especially if the initial parameter guesses are not close to the true values.
+
+2. Sensitivity to Initial Conditions and Parameters
+The outcomes of the SEIR model can be highly sensitive to initial conditions and parameter values. Small changes in parameters can lead to significantly different dynamics, which means the optimization needs to be robust and possibly incorporate constraints to ensure biological plausibility (e.g., rates must be non-negative).
+
+3. Quality and Quantity of Data
+The accuracy of parameter estimation is heavily dependent on the quality (e.g., noise level) and quantity of the data available. If the data has high variability or is sparse, the least squares method might fit the noise rather than the underlying trend, leading to inaccurate parameter estimations.
+
+4. Appropriateness of the Cost Function
+The traditional sum of squared errors might not be the best objective function for all situations, especially when dealing with infectious diseases where the data might have other characteristics like being overdispersed or having higher variance at different stages of the epidemic.
+
+5. Lack of Constraints on Parameters
+Without constraints, the optimization algorithm might yield parameter values that are biologically unrealistic (e.g., negative rates, exceedingly high transmission rates). It's important to constrain the parameters within biologically meaningful ranges during optimization.
+
+6. Local vs. Global Optimization
+The least squares approach often used in these cases (like the Nelder-Mead method) is a local optimization technique. For complex models like SEIR, global optimization techniques might be necessary to find the best overall parameters rather than settling for locally optimal solutions.
+
+Mitigating Strategies
+To improve the reliability of parameter estimation using least squares or similar optimization methods in an SEIR model, consider the following strategies:
+
+Use Good Initial Estimates: Knowledge of the disease or results from similar studies can provide better starting points for the parameters.
+Constrain Parameters: Apply constraints that keep the parameters within realistic limits.
+Enhance Data Quality: Where possible, use more comprehensive and cleaner data sets to reduce the influence of outliers and noise.
+Global Optimization Techniques: Consider using global optimization methods that are less likely to get trapped in local minima, such as simulated annealing or genetic algorithms.
+Robust or Regularized Regression: Implementing these approaches can help reduce the effect of outliers and improve the generalizability of the model.
+By addressing these potential issues, you can enhance the robustness and accuracy of your parameter estimations for SEIR models or any other mathematical models used in epidemiology or similar fields.
+
+Correctness of the Approach
+Model Assumptions: The SIR and SEIR models make specific assumptions about the nature of the disease transmission (e.g., homogenous mixing of the population, constant rates of infection and recovery, etc.). If these assumptions are violated (e.g., if there are significant variations in transmission rates due to interventions like social distancing), the model may not fit the data well.
+
+Data Suitability: These models are typically fitted to data on the number of active infections, recoveries, and sometimes exposed individuals. The accuracy of the model depends greatly on the quality and granularity of the data. For example, daily data can provide more precise fits than weekly data.
+
+Parameter Sensitivity: The parameters 
+
+β (transmission rate), 
+
+γ (recovery rate), and 
+
+σ (rate from exposed to infectious in SEIR) are crucial for the model's behavior. Their estimation can be sensitive to how initial conditions are set and how data points are weighted in the SSE function.
+
+Initial Conditions: Accurately setting the initial number of susceptible, exposed (in SEIR), infectious, and recovered individuals is critical. Misestimating these values can lead to poor fits and misleading forecasts.
+
+Optimization Method: The Nelder-Mead method used for optimization is a good general-purpose approach, especially when the gradient is not available. However, it might converge to local minima, especially if the initial parameter guesses are far from the true values. More robust or global optimization methods might sometimes be necessary.
+
+Improving the Fit
+Data Preprocessing: Ensuring that the data accurately reflects the dynamics you want to model (e.g., adjusting for underreporting or delays in case reporting) can improve the fit.
+Extended Models: Depending on the disease and available data, extending the basic SIR or SEIR models to include additional compartments (e.g., quarantined, vaccinated) or to account for varying populations (age-structured models) might provide better insights.
+Robust Optimization: Using more advanced optimization techniques or Bayesian approaches to estimate parameters can provide better handling of uncertainty and potential parameter correlations.
+Validation: It's crucial to validate the model predictions against independent data sets or through cross-validation techniques to ensure the model's predictive power and to avoid overfitting.

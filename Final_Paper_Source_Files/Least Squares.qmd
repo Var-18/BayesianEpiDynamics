@@ -1,0 +1,386 @@
+---
+title: "Least Squares"
+author: "Varun V. Datta"
+format: html
+---
+```{r}
+library(tidyverse)
+library(deSolve)
+library(outbreaks)
+```
+
+```{r}
+
+# Access the dataset
+data(influenza_england_1978_school)
+flu_data <- influenza_england_1978_school
+
+
+
+# Define the SIR model function
+closed.sir.model <- function(t, x, params) {
+  S <- x[1]
+  I <- x[2]
+  R <- x[3]
+  beta <- params[1]
+  gamma <- params[2]
+  N <- params[3]  # Total population
+  dS <- -beta * S * I / N
+  dI <- beta * S * I / N - gamma * I
+  dR <- gamma * I
+  return(list(c(dS, dI, dR)))
+}
+
+# Sum of Squared Errors (SSE) function
+sse.sir <- function(params0, data) {
+  times <- as.numeric(data$date - min(data$date)) + 1
+  cases <- data$in_bed
+  N <- 763  # Total population
+  I0 <- cases[1]  # Initial number of infected individuals
+  S0 <- N - I0  # Initial number of susceptible individuals
+  R0 <- 0  # Initial number of recovered individuals
+
+  # Simulate the model
+  out <- as.data.frame(ode(y = c(S = S0, I = I0, R = R0), times = times, func = closed.sir.model, parms = c(beta = params0[1], gamma = params0[2], N), hmax = 0.1))
+  sse <- sum((out$I - cases)^2)
+  return(sse)
+}
+
+# Initial parameter guesses
+initial_params <- c(1.5e-3, 0.44)  # Initial guesses for beta and gamma
+
+# Optimization using Nelder-Mead method
+fit <- optim(par = initial_params, fn = sse.sir, data = flu_data, method = "Nelder-Mead")
+
+# Generate predictions using the optimized parameters
+days <- as.numeric(flu_data$date - min(flu_data$date)) + 1
+model_output <- as.data.frame(ode(y = c(S = 763 - flu_data$in_bed[1], I = flu_data$in_bed[1], R = 0), times = days, func = closed.sir.model, parms = c(fit$par, 763), hmax = 0.1))
+
+# Plot actual vs. predicted
+ggplot() +
+  geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+  geom_point(data = flu_data, aes(x = days, y = in_bed, colour = "Actual"), size = 2) +
+  labs(title = "Actual vs. Predicted Infected Individuals",
+       x = "Day from Start",
+       y = "Number of Infected Individuals") +
+  scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+  theme_minimal()
+
+```
+
+```{r}
+# Print the optimized beta and gamma values
+cat("Optimized beta (transmission rate):", fit$par[1], "\n")
+cat("Optimized gamma (recovery rate):", fit$par[2], "\n")
+
+```
+
+
+```{r}
+# Define the SIR model function
+closed.sir.model <- function(t, x, params) {
+  S <- x[1]
+  I <- x[2]
+  R <- x[3]
+  beta <- params[1]
+  gamma <- params[2]
+  N <- params[3]  # Total population as a parameter
+  dS <- -beta * S * I / N
+  dI <- beta * S * I / N - gamma * I
+  dR <- gamma * I
+  return(list(c(dS, dI, dR)))
+}
+
+# Sum of Squared Errors (SSE) function
+sse.sir <- function(params0, data, initial_conditions, population) {
+  times <- as.numeric(data$date - min(data$date)) + 1
+  cases <- data$in_bed
+  N <- population
+  S0 <- initial_conditions[1]
+  I0 <- initial_conditions[2]
+  R0 <- initial_conditions[3]
+
+  # Simulate the model
+  out <- as.data.frame(ode(y = c(S = S0, I = I0, R = R0), times = times, func = closed.sir.model, parms = c(beta = params0[1], gamma = params0[2], N), hmax = 0.1))
+  sse <- sum((out$I - cases)^2)
+  return(sse)
+}
+
+# General function to fit SIR model
+fit_sir_model <- function(data, initial_beta, initial_gamma, population, initial_conditions) {
+  initial_params <- c(initial_beta, initial_gamma)  # Initial guesses for beta and gamma
+
+  # Optimization using Nelder-Mead method
+  fit <- optim(par = initial_params, fn = sse.sir, data = data, initial_conditions = initial_conditions, population = population, method = "Nelder-Mead")
+
+  # Generate predictions using the optimized parameters
+  days <- as.numeric(data$date - min(data$date)) + 1
+  model_output <- as.data.frame(ode(y = c(S = initial_conditions[1], I = initial_conditions[2], R = initial_conditions[3]), times = days, func = closed.sir.model, parms = c(fit$par, population), hmax = 0.1))
+
+  # Plot actual vs. predicted
+  ggplot() +
+    geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+    geom_point(data = data, aes(x = days, y = in_bed, colour = "Actual"), size = 2) +
+    labs(title = "Actual vs. Predicted Infected Individuals",
+         x = "Day from Start",
+         y = "Number of Infected Individuals") +
+    scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+    theme_minimal()
+
+  return(fit$par)  # Return the fitted parameters
+}
+
+# Example usage with any data
+# data <- read.csv("path_to_data.csv")  # The data must have columns 'date' and 'in_bed'
+# initial_conditions <- c(S0, I0, R0)  # These values should be provided or calculated based on the data
+# fit_sir_model(data, initial_beta = 1.5e-3, initial_gamma = 0.44, population = 763, initial_conditions)
+```
+
+
+
+
+```{r}
+# Define the SEIR model function
+seir.model <- function(t, x, params) {
+    S <- x[1]
+    E <- x[2]
+    I <- x[3]
+    R <- x[4]
+    beta <- params[1]
+    sigma <- params[2]  # Rate of movement from E to I (incubation rate)
+    gamma <- params[3]
+    N <- params[4]  # Total population
+
+    dS <- -beta * S * I / N
+    dE <- beta * S * I / N - sigma * E
+    dI <- sigma * E - gamma * I
+    dR <- gamma * I
+    return(list(c(dS, dE, dI, dR)))
+}
+
+# Sum of Squared Errors (SSE) function for SEIR
+sse.seir <- function(params0, data) {
+    times <- as.numeric(data$date - min(data$date)) + 1
+    cases <- data$in_bed
+    N <- 763  # Total population
+    E0 <- 0   # Initial number of exposed individuals
+    I0 <- cases[1]  # Initial number of infectious individuals
+    S0 <- N - I0 - E0  # Initial number of susceptible individuals
+    R0 <- 0  # Initial number of recovered individuals
+
+    # Simulate the model
+    out <- as.data.frame(ode(y = c(S = S0, E = E0, I = I0, R = R0), times = times, func = seir.model, parms = c(beta = params0[1], sigma = params0[2], gamma = params0[3], N), hmax = 0.1))
+    sse <- sum((out$I - cases)^2)
+    return(sse)
+}
+
+# Initial parameter guesses for SEIR model
+initial_params <- c(1.5e-3, 1/3, 0.44)  # beta, sigma, gamma
+
+# Optimization using Nelder-Mead method
+fit <- optim(par = initial_params, fn = sse.seir, data = flu_data, method = "Nelder-Mead")
+
+# Generate predictions using the optimized parameters
+days <- as.numeric(flu_data$date - min(flu_data$date)) + 1
+model_output <- as.data.frame(ode(y = c(S = 763 - flu_data$in_bed[1], E = 0, I = flu_data$in_bed[1], R = 0), times = days, func = seir.model, parms = c(fit$par, 763), hmax = 0.1))
+
+# Plot actual vs. predicted
+ggplot() +
+  geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+  geom_point(data = flu_data, aes(x = days, y = in_bed, colour = "Actual"), size = 2) +
+  labs(title = "Actual vs. Predicted Infected Individuals (SEIR Model)",
+       x = "Day from Start",
+       y = "Number of Infected Individuals") +
+  scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+# Print the optimized parameters
+cat("Optimized Parameters:\n")
+cat("Beta (transmission rate):", fit$par[1], "\n")
+cat("Sigma (incubation rate):", fit$par[2], "\n")
+cat("Gamma (recovery rate):", fit$par[3], "\n")
+
+
+```
+
+
+
+# NYC
+
+# SIR MODEL OF INCIDENCES
+
+This is for New York city and the data is sourced from https://github.com/nychealth/coronavirus-data which is a github repo linked on the NYC open data website.
+
+## Data import and wrangling
+
+```{r,message=FALSE}
+ny_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Data/NYC_Gov/cases-by-day.csv")
+ny_df %>% mutate(date_of_interest = as.Date(date_of_interest, format = "%m/%d/%Y"))->ny_df 
+# Formatting the date into a proper date format
+```
+
+```{r}
+ny_df %>% select(date_of_interest,CASE_COUNT)->covid_df
+# selecting the columns we need
+```
+
+```{r}
+covid_df<- covid_df %>% filter(date_of_interest <= as.Date("2020-06-25"))
+
+# This is around the time the first wave had seemingly ended
+covid_df
+```
+
+## Plotting the cases
+
+```{r}
+covid_df %>% ggplot() + geom_bar(mapping =aes(x = date_of_interest,y=CASE_COUNT),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+```
+
+```{r}
+
+### Initial parameter values  
+
+N <- N <- 8.773e6  # Population of New York 
+
+i0 <- 1
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+# Cases
+cases <- covid_df$CASE_COUNT
+
+# times
+n_days <- length(cases)
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+data_sir 
+```
+```{r}
+
+
+# Load necessary libraries
+library(deSolve)
+library(ggplot2)
+
+# Define the SIR model function
+closed.sir.model <- function(t, x, params) {
+  S <- x[1]
+  I <- x[2]
+  R <- x[3]
+  beta <- params[1]
+  gamma <- params[2]
+  N <- params[3]  # Total population
+  dS <- -beta * S * I / N
+  dI <- beta * S * I / N - gamma * I
+  dR <- gamma * I
+  return(list(c(dS, dI, dR)))
+}
+
+# Sum of Squared Errors (SSE) function
+sse.sir <- function(params0, data) {
+  times <- as.numeric(data$date_of_interest - min(data$date_of_interest)) + 1
+  cases <- data$CASE_COUNT
+  N <- 8772999  # Total population
+  I0 <- 1   # Initial number of infected individuals
+  S0 <- N - I0  # Initial number of susceptible individuals
+  R0 <- 0  # Initial number of recovered individuals
+
+  # Simulate the model
+  out <- as.data.frame(ode(y = c(S = S0, I = I0, R = R0), times = times, func = closed.sir.model, parms = c(beta = params0[1], gamma = params0[2], N), hmax = 0.1))
+  sse <- sum((out$I - cases)^2)
+  return(sse)
+}
+
+# Initial parameter guesses
+initial_params <- c(1.5e-3, 0.44)  # Initial guesses for beta and gamma
+
+# Optimization using Nelder-Mead method
+fit <- optim(par = initial_params, fn = sse.sir, data = covid_df, method = "Nelder-Mead")
+
+# Generate predictions using the optimized parameters
+days <- as.numeric(covid_df$date_of_interest - min(covid_df$date_of_interest)) + 1
+model_output <- as.data.frame(ode(y = c(S = 8772999 - covid_df$CASE_COUNT[1], I = 1, R = 0), times = days, func = closed.sir.model, parms = c(fit$par, 8772999), hmax = 0.1))
+
+# Plot actual vs. predicted
+ggplot() +
+  geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+  geom_point(data = covid_df, aes(x = days, y = CASE_COUNT, colour = "Actual"), size = 2) +
+  labs(title = "Actual vs. Predicted Infected Individuals",
+       x = "Day from Start",
+       y = "Number of Infected Individuals") +
+  scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+  theme_minimal()
+
+```
+
+```{r}
+cat("Optimized beta (transmission rate):", fit$par[1], "\n")
+cat("Optimized gamma (recovery rate):", fit$par[2], "\n")
+```
+
+## SEIR
+https://www.freecodecamp.org/news/how-to-model-an-epidemic-with-r/
+
+```{r}
+library(deSolve)
+library(tidyverse)
+
+# Define the SEIR model function
+SEIR <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    N <- S + E + I + R
+    dS <- -(beta * S * I) / N
+    dE <- (beta * S * I) / N - sigma * E
+    dI <- sigma * E - gamma * I - mu * I
+    dR <- gamma * I
+    dM <- mu * I
+    
+    return(list(c(dS, dE, dI, dR, dM)))
+  })
+}
+
+
+
+# Initial conditions and parameters
+initial_state <- c(S = 8772999 - covid_df$CASE_COUNT[1], E = 1, I = 1, R = 0, M = 0)
+parameters <- c(beta = 0.5, sigma = 0.1, gamma = 0.1, mu = 0.01)  # Initial guesses
+times <- 1:nrow(covid_df)
+
+# Define the cost function for optimization
+cost_function <- function(params) {
+  names(params) <- c("beta", "sigma", "gamma", "mu")
+  out <- ode(y = initial_state, times = times, func = SEIR, parms = params)
+  predicted <- out[,"I"]  # Assuming we're fitting to the number of infectious individuals
+  sum((covid_df$CASE_COUNT - predicted)^2)
+}
+
+# Perform the optimization
+opt_result <- optim(par = parameters, fn = cost_function, control = list(maxit = 1000))
+
+# Solve the ODE with optimized parameters
+optimized_params <- setNames(opt_result$par, c("beta", "sigma", "gamma", "mu"))
+fitted_model <- ode(y = initial_state, times = times, func = SEIR, parms = optimized_params)
+
+# Plotting the results
+predicted_cases <- as.data.frame(fitted_model)[, "I"]
+actual_vs_predicted <- data.frame(date = covid_df$date_of_interest, Actual = covid_df$CASE_COUNT, Predicted = predicted_cases)
+
+ggplot(actual_vs_predicted, aes(x = date)) +
+  geom_line(aes(y = Actual, colour = "Actual")) +
+  geom_line(aes(y = Predicted, colour = "Predicted")) +
+  labs(title = "Actual vs Predicted COVID-19 Cases", y = "Number of Cases") +
+  theme_minimal()
+
+
+```
+
+
