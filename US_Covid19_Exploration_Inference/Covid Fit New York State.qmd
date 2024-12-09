@@ -1,0 +1,617 @@
+---
+title: "US_Covid_Bayesian_Infer"
+author: "Varun V. Datta"
+format: html
+
+---
+```{r}
+# color palette
+c_light <- c("#fee0d2")
+c_mid <- c("#fc9272")
+c_dark <- c("#de2d26")
+c_simu <- "chartreuse3"
+c_posterior = "orange"
+c_prior = "aquamarine2"
+```
+
+```{r,message=FALSE} 
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(gridExtra)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+```
+
+```{r,message=FALSE}
+covid_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Data/time_series_covid19_confirmed_US.csv")
+
+#str(covid_df)
+```
+
+```{r}
+
+
+ ny_df<-covid_df %>% filter(Province_State=='New York') %>% select(- c(UID,iso2,iso3,code3,FIPS,Admin2,Country_Region,Lat,Long_,Combined_Key ) )
+
+```
+
+```{r}
+#str(ny_df)
+```
+
+```{r}
+ny_df <- ny_df %>% 
+  rename_with(~ str_replace(., "^200", ""), starts_with("200"))
+
+```
+
+```{r}
+# Function to format column names
+format_date <- function(col_name) {
+  # Try to parse as date
+  date <- parse_date_time(col_name, orders = c("mdy", "m-d-y"))
+  if (!is.na(date)) {
+    return(format(date, "%m/%d/%y"))
+  }
+  return(col_name)
+}
+#glimpse(ny_df)
+```
+
+```{r}
+ny_df <- ny_df %>% rename_with(~sapply(.,format_date))
+#glimpse(ny_df)
+```
+
+```{r}
+ny_agg_df <- ny_df %>%
+ select(-Province_State) %>%
+  summarise(across(everything(), \(x) sum(x, na.rm = TRUE)))
+#glimpse(ny_agg_df)
+```
+
+```{r}
+# Convert data to long format
+ny_long_df <- ny_agg_df %>%
+  pivot_longer(cols = everything(), names_to = "date", values_to = "cumulative_cases")
+
+# Calculate daily new cases
+ny_long_df <- ny_long_df %>%
+  arrange(date) %>%
+  mutate(daily_new_cases = cumulative_cases - lag(cumulative_cases, default = 0)) %>%  mutate(date = as.Date(date, format = "%m/%d/%y"))
+
+
+# View the result
+print(ny_long_df)
+```
+```{r}
+ny_long_df %>% 
+  ggplot() + 
+  geom_bar(mapping = aes(x = date, y = daily_new_cases), fill = "red", color = "orange", stat = "identity") +
+  labs(y="Number of reported cases")
+```
+
+```{r}
+ny_long_df %>% 
+  ggplot() + 
+  geom_bar(mapping = aes(x = date, y = cumulative_cases), fill = "red", color = "orange", stat = "identity") +
+  labs(y="Number of reported cases (cumulative)")
+```
+
+# Fitting an SIR model on the data 
+
+
+
+### Initial parameter values  
+```{r}
+N <- N <- 1.934e7  # Population of New York 
+
+i0 <- 1
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+```
+
+### Compiling the Stan Model
+
+```{r}
+sir_model <- stan_model("stan_models/sir_incidence.stan")
+```
+
+### Extracting the data for Stan Model
+
+```{r}
+# Cases
+cases <- ny_long_df$daily_new_cases
+
+# times
+n_days <- length(cases)
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+data_sir
+```
+
+## Fitting the Model SIR IMPROVED SAME AS NYC
+```{r}
+fit_sir <- sampling(sir_model, 
+                    data_sir, 
+                    iter=1000,
+                    seed = 0)
+```
+```{r}
+print(fit_sir,pars =c("beta","gamma","R0","recovery_time"))
+```
+
+```{r}
+stan_dens(fit_sir,pars=c('gamma','beta','phi_inv'), separate_chains = TRUE)
+```
+```{r}
+
+
+t <- 2:n_days  # t starts from day 2 to day 76
+
+# Adjust 'cases' to match the length of 't' 
+cases_adjusted <- cases[2:n_days]
+
+# Get summary of incidence
+incidence_summary <- summary(fit_sir, pars = "incidence", probs = c(0.05, 0.5, 0.95))$summary
+
+# Create data frame
+smr_pred <- cbind(as.data.frame(incidence_summary), t, cases = cases_adjusted)
+
+# Correct column names to remove potential issues (e.g., percentage signs from probs)
+colnames(smr_pred) <- make.names(colnames(smr_pred))
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "blue", alpha = 0.35) +  # Example: fill color set to blue
+  geom_line(mapping = aes(y = X50.), color = "red") +  # Example: line color set to red
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of cases")
+
+
+```
+The plot is useful for assessing the accuracy of the model in predicting daily new cases and understanding the day-to-day variability in case incidence as captured by the model.
+
+```{r}
+params <- lapply(t, function(i) sprintf("y[%s,2]", i))  # number of infected for each day
+smr_y <- as.data.frame(summary(fit_sir, 
+                               pars = unlist(params), probs = c(0.05, 0.5, 0.95))$summary)
+colnames(smr_y) <- make.names(colnames(smr_y))  # To remove % in the column names
+ggplot(smr_y, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "blue", alpha = 0.35) +
+  geom_line(mapping = aes(y = X50.), color = "red") +
+  labs(x = "Day", y = "Number of infected individuals")
+```
+This plot visualizes the predicted number of infected individuals each day, as estimated by the SIR model.
+
+
+```{r}
+check_hmc_diagnostics(fit_sir)
+```
+```{r}
+# Create pairs plot to diagnose sampling problems
+pairs(fit_sir, pars = c("beta", "gamma", "lp__"))
+
+```
+
+
+
+```{r}
+traceplot(fit_sir, pars = c("gamma", "beta", "lp__"))
+```
+```{r}
+fit_sir %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_median = median(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   #geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = c_mid, alpha=0.7)+
+   geom_line(mapping = aes(y=pred_median), color = c_posterior)+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain, scales = "free")
+```
+## Conclusion
+
+Our basic model doesn’t match our data. To make it fit, we can think of different improvements to the model to reflect the dynamics of disease:
+
+Due to the size of the COVID-19 epidemic and to limited testing capacities, there have been massive underreporting of cases. Our model could take this into account.
+
+New York has has put lock-down measures into place, and people have modified their behaviour in reaction to the virus: parameter β
+ is not constant over time.
+
+We could account for the incubation time.
+
+We could account for the reporting time.
+
+We could make the initial number of infected people a parameter of the model.
+
+# Advanced SIR 
+```{r}
+# Ensure the date column is of Date type
+ny_long_df$date <- as.Date(ny_long_df$date)
+
+# Ensure date_switch is of Date type
+date_switch <- as.Date(date_switch)
+
+# Filter the data based on the date_switch
+filtered_data <- ny_long_df %>%
+  filter(date < date_switch)
+
+# Perform the filtering operation on ny_long_df and calculate the row count
+filtered_rows_count <- nrow(filtered_data)
+
+# Display the result
+print(filtered_rows_count)
+
+# Calculate tswitch as the row count plus one
+tswitch <- filtered_rows_count + 1
+
+# Prepare the data_forcing list
+n_days <- nrow(ny_long_df)
+cases <- ny_long_df$daily_new_cases
+ts <- seq_len(n_days)
+
+# Check if lengths match
+if (length(ts) != length(cases)) {
+  stop("Length of 'ts' and 'cases' do not match.")
+}
+
+# Display lengths for verification
+cat("Length of ts: ", length(ts), "\n")
+cat("Length of cases: ", length(cases), "\n")
+cat("n_days: ", n_days, "\n")
+
+# Adjust lengths if there is a discrepancy
+if (n_days != length(cases)) {
+  n_days <- length(cases)
+  ts <- seq_len(n_days)
+}
+
+# Prepare the data_forcing list with correct lengths
+data_forcing <- list(n_days = n_days, t0 = t0, ts = ts, N = N, cases = cases, tswitch = tswitch)
+
+# Display the data_forcing list to verify
+print(data_forcing)
+
+```
+
+
+
+```{r}
+model_forcing <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/SIR_Lockdown.stan")
+```
+
+
+
+```{r}
+fit_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1000,
+                        seed=4)
+```
+
+```{r}
+check_hmc_diagnostics(fit_forcing)
+```
+
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_forcing, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+```{r}
+traceplot(fit_forcing, pars = c("gamma", "beta", "lp__"))
+```
+```{r}
+stan_dens(fit_forcing,pars=c('gamma','beta','phi_inv'), separate_chains = TRUE)
+
+```
+```{r}
+fit_forcing %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_median = median(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   #geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = c_mid, alpha=0.7)+
+   geom_line(mapping = aes(y=pred_median), color = 'red')+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain, scales = "free")
+```
+
+
+# More data
+
+Let's utilize data for the entire state of new yorks starting March 1 2020 to July 25 2020 (where the first way plateaued)
+
+https://coronavirus.health.ny.gov/covid-19-data-new-york
+
+https://health.data.ny.gov/Health/New-York-State-Statewide-COVID-19-Testing/jvfi-ffup/about_data
+
+```{r,message=FALSE,warning=FALSE}
+nys_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/New York State Data/New_York_State_Statewide_COVID-19_Testing_20240722.csv")
+glimpse(nys_df)
+nys_df %>% group_by(`Geography Level` ) %>% summarize(n())
+nys_only<-nys_df %>% filter(`Geography Level`== "STATEWIDE") 
+glimpse(nys_only)
+```
+
+
+```{r}
+nys_onlydf <- nys_only %>%  select(`Test Date`,`Total New Positives`)
+glimpse(nys_onlydf)
+```
+## Visualzing NY state data wave 1 2020
+```{r}
+#nys_onlydf %>% ggplot() + geom_bar(mapping =aes(x = `Test Date`,y=`Total New Positives`),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+```
+```{r}
+nys_wave1 <- nys_onlydf %>%
+  mutate(`Test Date` = as.Date(`Test Date`, format = "%m/%d/%Y")) 
+
+nys_wave1 <- nys_wave1 %>%filter(`Test Date` <= as.Date("2020-7-25"))
+glimpse(nys_wave1)
+
+nys_wave1 %>% ggplot() + geom_bar(mapping =aes(x = `Test Date`,y=`Total New Positives`),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+
+nys_wave1 
+```
+
+
+## Initialziing
+
+
+
+
+```{r}
+### Initial parameter values  
+
+N <- N <- 19.34e6  # Population of New York State
+
+i0 <- 2 # 2 initial cases march 1 st as reported
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+```
+
+
+## Extracting the data for Stan Model 
+
+We will be utilizing the same SIR model with informative priors and a forcing mechanisim for lockdown measures
+
+
+```{r}
+# Cases
+cases <- nys_wave1$`Total New Positives`
+
+# times
+n_days <- length(cases)
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+```
+
+```{r}
+date_switch <- "2020-03-23" # date of introduction of control measures IN NYC
+
+tswitch <- nys_wave1 %>% filter(`Test Date` < date_switch) %>% nrow() + 1 # convert time to number
+
+data_forcing <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases, tswitch = tswitch)
+```
+## Fitting the model
+
+```{r}
+model_forcing <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/SIR_Lockdown.stan")
+```
+
+```{r}
+nys_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                      iter = 1500,
+                        seed = 55,
+                        control = list(adapt_delta = .999,  # Increase adapt_delta to reduce divergences
+                                       max_treedepth = 15))
+```
+## Plots and diagnostics of Advanced SIR
+
+```{r}
+print(nys_forcing ,pars =c("beta","gamma","R0","recovery_time"))
+```
+
+```{r}
+stan_dens(nys_forcing ,pars=c('gamma','beta','phi_inv'), separate_chains = TRUE)
+```
+```{r}
+
+
+t <- 2:n_days  # t starts from day 2 to day 76
+
+# Adjust 'cases' to match the length of 't' 
+cases_adjusted <- cases[2:n_days]
+
+# Get summary of incidence
+incidence_summary <- summary(nys_forcing , pars = "incidence", probs = c(0.05, 0.5, 0.95))$summary
+
+# Create data frame
+smr_pred <- cbind(as.data.frame(incidence_summary), t, cases = cases_adjusted)
+
+# Correct column names to remove potential issues (e.g., percentage signs from probs)
+colnames(smr_pred) <- make.names(colnames(smr_pred))
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "blue", alpha = 0.35) +  # Example: fill color set to blue
+  geom_line(mapping = aes(y = X50.), color = "red") +  # Example: line color set to red
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of cases")
+
+
+```
+The plot is useful for assessing the accuracy of the model in predicting daily new cases and understanding the day-to-day variability in case incidence as captured by the model.
+
+```{r}
+params <- lapply(t, function(i) sprintf("y[%s,2]", i))  # number of infected for each day
+smr_y <- as.data.frame(summary(nys_forcing , 
+                               pars = unlist(params), probs = c(0.05, 0.5, 0.95))$summary)
+colnames(smr_y) <- make.names(colnames(smr_y))  # To remove % in the column names
+ggplot(smr_y, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "blue", alpha = 0.35) +
+  geom_line(mapping = aes(y = X50.), color = "red") +
+  labs(x = "Day", y = "Number of infected individuals")
+```
+This plot visualizes the predicted number of infected individuals each day, as estimated by the SIR model.
+
+
+```{r}
+check_hmc_diagnostics(nys_forcing )
+```
+```{r}
+# Create pairs plot to diagnose sampling problems
+pairs(nys_forcing , pars = c("beta", "gamma", "lp__"))
+
+```
+
+
+
+```{r}
+traceplot(nys_forcing , pars = c("gamma", "beta", "lp__"))
+```
+```{r}
+nys_forcing  %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_median = median(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   #geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = c_mid, alpha=0.7)+
+   geom_line(mapping = aes(y=pred_median), color = c_posterior)+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain, scales = "free")
+```
+
+# SEIR 
+### Incorportating incubation time and varying initial infections.
+
+We transform the SIR model into a SEIR model, where people are *Exposed*
+before being infected. We suppose that *Exposed* people are not
+contagious, whereas *Infectious* people are. Furthermore, we suppose
+that people are reported as soon as they become *Infectious*. We add a
+parameter $a$, where $\frac{1}{a}$ corresponds to the average time
+between being infected and becoming infectious (for simplicity we also
+use $\frac{1}{a}$ as the time between being infected and being
+reported).
+
+SEIR equations become:
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dE}{dt} &= \beta S \frac{I}{N} - a E\\
+ \frac{dI}{dt} &= aE - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$
+
+<img src="pictures/SEIR_tik.jpg" alt="SEIR graph" width="500" align="center"/>
+
+We add the same weakly-informative prior $N(0.4, 0.5)$ on $a$ that we
+added on $\gamma$, which means that we expect the average time between
+being infected and becoming infectious to be roughly between half a day
+and thirty days.
+
+The incidence is now the number of people leaving the E compartment, i.e
+$E(t) - E(t+1) + S(t) - S(t+1)$[^11].
+
+[^11]: E(t) - E(t+1) is the number of people leaving the E compartment
+    minus the number of people entering E. S(t) - S(t+1) is the number
+    of people entering E
+
+```{stan, eval=F, output.var = "md"}
+  for (i in 1:n_days-1){
+    incidence[i] = -(y[i+1, 2] - y[i, 2] + y[i+1, 1] - y[i, 1]) * p_reported; //E(t) - E(t+1) + S(t) - S(t+1)
+  }
+```
+
+We also allow the initial number of infected and exposed people to vary:
+we add parameters $i_0$ and $e_0$, with weakly informative priors
+$N(0, 10)$[^12]. Remember Section 3: we always want to minimize the
+number $K$ of parameters given to the ODE function. Thus we don't add
+$y_0$ as a parameter of the ODE function. We only add $i_0$ and $e_0$,
+and reconstruct $y_0$ in the ODE function. This way, we only add
+$\propto (N+1)*2 = 10$ ODEs to solve at each HMC step instead of
+$\propto (N+1) * 4 = 20$. This advice gets more important as the number
+of compartments gets bigger.
+
+[^12]: We keep $r_0 =0$: in February there might already be a few
+    recovered people, but their number can't be high enough to influence
+    transmission dynamics
+
+Thus the call to the ODE solver becomes:
+
+```{stan, eval=F, output.var = "md"}
+//real theta[3] = {beta, gamma, a}; //slow
+//y = integrate_ode_rk45(sir, y0, t0, ts, theta, x_r, x_i); 
+real theta[5] = {beta, gamma, a, i0, e0}; //fast
+y = integrate_ode_rk45(sir, rep_array(0.0, 4), t0, ts, theta, x_r, x_i);
+```
+
+And the SEIR code becomes:
+
+```{stan, eval=F, output.var="md"}
+  real[] sir(real t, real[] y, real[] theta, 
+             real[] x_r, int[] x_i) {
+
+      real N = x_i[1];
+      
+      real beta = theta[1];
+      real gamma = theta[2];
+      real a = theta[3];
+      real i0 = theta[4];
+      real e0 = theta[5];
+      
+      real init[4] = {N - i0 - e0, e0, i0, 0}; // we reconstruct y0
+      real S = y[1] + init[1];
+      real E = y[2] + init[2];
+      real I = y[3] + init[3];
+      real R = y[4] + init[4];
+      
+      real dS_dt = -beta * I * S / N;
+      real dE_dt =  beta * I * S / N - a * E;
+      real dI_dt = a * E - gamma * I;
+      real dR_dt =  gamma * I;
+      
+      return {dS_dt, dE_dt, dI_dt, dR_dt};
+  }
+```
+
+## SEIR FORCING FIT
+```{r}
+model_forcing_SEIR <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/seir_forcing.stan")
+```
+
+```{r}
+nys_forcing_SEIR <- sampling(model_forcing_SEIR, 
+                        data_forcing, 
+                      iter = 1500,
+                        seed = 55,
+                        control = list(adapt_delta = .999,  # Increased adapt_delta to reduce divergences
+                                       max_treedepth = 15))
+```
+```
+

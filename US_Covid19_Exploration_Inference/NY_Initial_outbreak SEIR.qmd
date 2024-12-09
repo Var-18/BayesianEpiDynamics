@@ -1,0 +1,402 @@
+---
+title: "NY Covid19 Initial outbreak"
+author: "Varun V. Datta"
+format: html
+---
+
+```{r,message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(gridExtra)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+```
+
+# SIR MODEL OF INCIDENCES
+
+This is for New York city and the data is sourced from https://github.com/nychealth/coronavirus-data which is a github repo linked on the NYC open data website.
+
+## Data import and wrangling
+
+```{r,message=FALSE}
+ny_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Data/NYC_Gov/cases-by-day.csv")
+ny_df %>% mutate(date_of_interest = as.Date(date_of_interest, format = "%m/%d/%Y"))->ny_df 
+# Formatting the date into a proper date format
+```
+
+```{r}
+ny_df %>% select(date_of_interest,CASE_COUNT)->covid_df
+# selecting the columns we need
+```
+
+```{r}
+covid_df<- covid_df %>% filter(date_of_interest <= as.Date("2020-06-25"))
+
+# This is around the time the first wave had seemingly ended
+covid_df
+```
+
+## Plotting the cases
+
+```{r}
+covid_df %>% ggplot() + geom_bar(mapping =aes(x = date_of_interest,y=CASE_COUNT),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+```
+
+## Fitting the model
+
+```{r}
+### Initial parameter values  
+
+N <- N <- 8.773e6  # Population of New York 
+
+i0 <- 1
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+```
+
+### Compiling the Stan Model
+
+```{r}
+sir_model <- stan_model("stan_models/sir_incidence.stan")
+```
+
+### Extracting the data for Stan Model
+
+```{r}
+# Cases
+cases <- covid_df$CASE_COUNT
+
+# times
+n_days <- length(cases)
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+```
+
+### Sampling
+
+```{r}
+fit_sir <- sampling(sir_model, 
+                    data_sir, 
+                    iter=1000,
+                    seed = 0)
+```
+
+## Summary of the FIT
+
+```{r}
+print(fit_sir,pars =c("beta","gamma","R0","recovery_time"))
+```
+
+## Trace plots of our chains
+
+```{r}
+traceplot(fit_sir, pars = c("gamma", "beta", "lp__"))
+```
+
+## Density of chains
+
+```{r}
+stan_dens(fit_sir,pars=c('gamma','beta','phi_inv'), separate_chains = TRUE)
+
+```
+
+```{r}
+fit_sir %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_median = median(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   #geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = c_mid, alpha=0.7)+
+   geom_line(mapping = aes(y=pred_median), color = 'red')+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain, scales = "free")
+```
+
+The predictions from all chains are very far from the data.
+
+What do all these issues tell us? One of these three things:
+
+-   There is a bug in our code.
+
+-   The model would be fine if the posterior distribution were correctly sampled, but our inference is unable to characterize the posterior.
+
+-   Per Folk’s theorem13, the inference problem is a symptom of a modeling problem: the model does not fit the data, for instance is not identifiable. In other words, the model is misspecified.
+
+# Improving the model
+
+Our basic model doesn’t match our data. To make it fit, we can think of different improvements to the model to reflect the dynamics of disease:
+
+1.  Due to the size of the COVID-19 epidemic and to limited testing capacities, there have been massive underreporting of cases. Our model could take this into account.
+
+2.  NYC has put lock-down measures into place, and people have modified their behaviour in reaction to the virus: parameter β is not constant over time.
+
+3.  We could account for the incubation time.(SEIR MODEL)
+
+4.  We could account for the reporting time.
+
+5.  We could make the initial number of infected people a parameter of the model.
+
+6.  Given the growing literature on COVID-19, we could add information to our model. This can mean making our priors more informative, or adding different data.
+
+# Adjusting for underreporting
+
+We will add an additional parameter in our STAN model's parameters block
+
+```{stan, eval=FALSE, output.var="md"}
+parameters {
+  real<lower=0> gamma;
+  real<lower=0> beta;
+  real<lower=0> phi_inv;
+  real<lower=0, upper=1> p_reported; // proportion of infected (symptomatic) people reported
+}
+```
+
+The incidence computation in the transformed parameters block becomes:
+
+```{stan,eval = FALSE,, output.var="md"}
+
+for (i in 1:n_days-1){
+    incidence[i] =  (y[i, 1] - y[i+1, 1]) * p_reported;
+  }
+  
+  
+```
+
+We give p_reported a weakly-informative β(1,2) prior, which indicates that we are quite uncertain about this parameter, except that it’s between 0 and 1 and shouldn’t be too close to 1
+
+```{stan, eval=FALSE, output.var="md"}
+p_reported ~ beta(1, 2);
+
+```
+
+## Compiling the undereporting model
+
+```{r}
+model_sir_underreporting <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/sir_underreporting.stan")
+```
+
+```{r}
+fit_sir_underreporting <- sampling(model_sir_underreporting, 
+                                   data_sir, 
+                                   iter=1000,
+                                   seed = 0)
+
+```
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_sir_underreporting, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+We can see that the prediction is considerably better than in the previous case. In particular, the uncertainty on the prediction is no longer off by orders of magnitude. Still, it is off, and the predicted cases are skewed. It could be that our priors don’t match our data, but we have chosen them uninformative enough that it shouldn’t break our model. Thus it is likely that the model is simply missing crucial properties of the process generating our data. What the best way forward? Incorporating incubation time and varying initial infections into the model seems like a good start. Given that the model predictions seem translated forward compared to our data, allowing the model to delay or rush transmission might solve our problems.
+
+# Incorporating Incubation Time and Varying Intiial Infections
+
+We transform the SIR model into a SEIR model, where people are Exposed before being infected. We suppose that Exposed people are not contagious, whereas Infectious people are. Furthermore, we suppose that people are reported as soon as they become Infectious. We add a parameter $a$, where $\frac{1}{a}$ corresponds to the average time between being infected and becoming infectious (for simplicity we also use $\frac{1}{a}$ as the time between being infected and being reported).
+
+SEIR equations become:
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dE}{dt} &= \beta S \frac{I}{N} - a E\\
+ \frac{dI}{dt} &= aE - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$
+
+We add the same weakly-informative prior $N(0.4, 0.5)$ on $a$ that we added on $\gamma$, which means that we expect the average time between being infected and becoming infectious to be roughly between half a day and thirty days.
+
+The incidence is now the number of people leaving the E compartment, i.e $E(t) - E(t+1) + S(t) - S(t+1)$[^1].
+
+[^1]: E(t) - E(t+1) is the number of people leaving the E compartment minus the number of people entering E. S(t) - S(t+1) is the number of people entering E
+
+```{stan, eval=FALSE, output.var = "md"}
+  for (i in 1:n_days-1){
+    incidence[i] = -(y[i+1, 2] - y[i, 2] + y[i+1, 1] - y[i, 1]) * p_reported; //E(t) - E(t+1) + S(t) - S(t+1)
+  }
+```
+
+We also allow the initial number of infected and exposed people to vary: we add parameters $i_0$ and $e_0$, with weakly informative priors $N(0, 10)$[^2]. Remember Section 3: we always want to minimize the number $K$ of parameters given to the ODE function. Thus we don't add $y_0$ as a parameter of the ODE function. We only add $i_0$ and $e_0$, and reconstruct $y_0$ in the ODE function. This way, we only add $\propto (N+1)*2 = 10$ ODEs to solve at each HMC step instead of $\propto (N+1) * 4 = 20$. This advice gets more important as the number of compartments gets bigger.
+
+[^2]: We keep $r_0 =0$: in February there might already be a few recovered people, but their number can't be high enough to influence transmission dynamics
+
+We choose the informative prior $inv(a) \sim \mathcal{N}(6, 1)$, which means there is a priori a greater than 99% chance that our incubation time is between 3 and 9. This should remove posterior probability mass from the region currently explored by chain 1 and 3, and make inference easier.
+
+We fit the modified model:
+
+```{r}
+model_seir <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/seir_incidence_informative.stan")
+
+```
+
+```{r}
+data_seir <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases)
+```
+
+```{r}
+fit_seir_informative <- sampling(model_seir, 
+                                 data_seir, 
+                                 iter=1000,chains = 6,
+                                 seed=0)
+```
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_seir_informative, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = "orange") +
+  geom_line(mapping = aes(x = t, y = X50.), color = "Red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+## Modeling control measures
+
+We model decreasing transmission due to governmental control measure by a logistic function: $\beta(t) = f(t) * \beta$, with $f(t) = \eta + (1 - \eta) * \frac{1}{1 + exp(\xi * (t - t_1 - \nu))}$, where $\eta$ is the decrease of transmission while control measures are fully in place, $\xi$ is the slope of the decrease, and $\nu$ is the delay (after the date of introduction of control measures) until the measures are 50% effective.
+
+In Stan, in the `functions` code block we add:
+
+```{stan, eval=FALSE, output.var="md"}
+real switch_eta(real t, real t1, real eta, real nu, real xi) {
+    return(eta+(1-eta)/(1+exp(xi*(t-t1-nu))));
+}
+```
+
+We add weakly-informative priors on the three parameters. $\eta \sim \beta(2.5, 4)$ which means we expect governmental measures to reduce transmission, but not all the way to zero. $\nu \sim exponential(1/5)$ which means the delay should be around a week but could be lower or quite higher. $\xi \sim \mathcal{U}(0.5, 1.5)$, which means the slope has to be positive.
+
+```{r}
+date_switch <- "2020-03-23" # date of introduction of control measures IN NYC
+
+tswitch <- covid_df %>% filter(date_of_interest < date_switch) %>% nrow() + 1 # convert time to number
+
+data_forcing <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases, tswitch = tswitch)
+```
+
+```{r}
+model_forcing <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/seir_forcing.stan")
+```
+
+```{r}
+fit_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1000,
+                        seed=4)
+```
+
+```{r}
+pairs(fit_forcing, pars = c("beta", "gamma", "a", "p_reported", "eta", "nu", "xi"))
+```
+
+```{r}
+check_hmc_diagnostics(fit_forcing)
+```
+
+Divergences: When Stan reports divergences, it means that the sampling algorithm is having difficulty exploring the posterior distribution effectively. Increasing adapt_delta helps because it makes the adaptation phase of the No-U-Turn Sampler (NUTS) algorithm more conservative, thus reducing the step size and allowing for a more refined exploration of the distribution. A higher adapt_delta value (closer to 1) typically reduces the number of divergences.
+
+Tree depth: The max_treedepth parameter controls the maximum depth of the trees sampled by the NUTS algorithm. If this depth is exceeded, it indicates that the sampler is repeatedly doubling the trajectory without finding a suitable point to stop. Increasing this limit allows the algorithm to build deeper trees, but at the cost of more computation time and potentially higher memory usage.
+
+Energy: The E-BFMI (Expected Bayesian Fraction of Missing Information) checks if the energy levels between transitions indicate any pathological behavior. No issues here suggest that the sampler's transitions between states are efficient, so you typically wouldn't need to adjust settings related to this unless other problems arise.
+
+```{r}
+stan_hist(fit_forcing, pars = "p_reported", fill = "orange", color="red")
+```
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_forcing, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+how the parameter $R_{0}(t)$, which corresponds to the average number of people infected by someone contracting the virus at time t, *taking into account environmental changes modifying transmission* such as people behavior or governmental policies. Because $R_{0}$ doesn't influence the joint posterior, we can compute it in the `generated quantities` code block for greater speed, as advised in section 3. We plot the decrease in $R_{0}$ inferred by the model: we can see it decreases below one after the governmental measures.
+
+```{r}
+fit_forcing %>% 
+  spread_draws(Reff[n_days]) %>% 
+  group_by(n_days) %>% 
+  summarise(R0_mean = mean(Reff), R09 = quantile(Reff, 0.95), R01 = quantile(Reff, 0.05)) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = n_days, ymin = R01, ymax = R09), fill = "red", alpha=0.35)+
+  geom_line(mapping = aes(n_days, R0_mean), color = "red") +
+  geom_vline(aes(xintercept = tswitch))
+```
+
+# Fitting the model with modified hyperparameters
+
+```{r}
+check_hmc_diagnostics(fit_forcing_modified)
+```
+
+
+```{r}
+fit_forcing_modified <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter = 1000,
+                        seed = 4,
+                        control = list(adapt_delta = 0.95,  # Increase adapt_delta to reduce divergences
+                                       max_treedepth = 12)  # Increase max_treedepth to avoid saturation
+                        )
+
+```
+
+
+how the parameter $R_{0}(t)$, which corresponds to
+the average number of people infected by someone contracting the virus
+at time t, *taking into account environmental changes modifying
+transmission* such as people behavior or governmental policies. Because
+$R_{0}$ doesn't influence the joint posterior, we can compute it in the
+`generated quantities` code block for greater speed, as advised in
+section 3. We plot the decrease in $R_{0}$ inferred by the model: we can
+see it decreases below one after the governmental measures.
+
+```{r}
+fit_forcing_modified %>% 
+  spread_draws(Reff[n_days]) %>% 
+  group_by(n_days) %>% 
+  summarise(R0_mean = mean(Reff), R09 = quantile(Reff, 0.95), R01 = quantile(Reff, 0.05)) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = n_days, ymin = R01, ymax = R09), fill = "red", alpha=0.35)+
+  geom_line(mapping = aes(n_days, R0_mean), color = "red") +
+  geom_vline(aes(xintercept = tswitch))
+```
+In the SEIR model, R0 is defined as the average number of secondary infections produced by a single infectious individual during their entire infectious period, in a fully susceptible population.
+
+
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_forcing_modified, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```

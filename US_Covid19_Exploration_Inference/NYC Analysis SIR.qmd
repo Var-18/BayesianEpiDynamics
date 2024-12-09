@@ -1,0 +1,369 @@
+---
+title: "NYC Outbreak Analysis"
+author: "Varun V. Datta"
+format: 
+  html: 
+    df_print: paged
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    toc_float: true
+   
+    math: true
+    number_section: true 
+    page-layout: full
+    embed-resources: true
+---
+```{r,message=FALSE,warning=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(gridExtra)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+```
+#Data Wrangling
+
+This is for New York city and the data is sourced from https://github.com/nychealth/coronavirus-data which is a github repo linked on the NYC open data website.
+ 
+We will be looking at roughly 
+
+```{r,message=FALSE}
+ny_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Data/NYC_Gov/cases-by-day.csv")
+ny_df %>% mutate(date_of_interest = as.Date(date_of_interest, format = "%m/%d/%Y"))->ny_df 
+# Formatting the date into a proper date format
+```
+
+```{r}
+ny_df %>% select(date_of_interest,CASE_COUNT)->covid_df
+# selecting the columns we need
+```
+
+```{r}
+covid_df<- covid_df %>% filter(date_of_interest <= as.Date("2020-06-25"))
+
+# This is around the time the first wave had seemingly ended
+covid_df
+```
+
+## Plotting the cases
+
+```{r}
+covid_df %>% ggplot() + geom_bar(mapping =aes(x = date_of_interest,y=CASE_COUNT),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+```
+
+
+## Initialziing
+
+```{r}
+### Initial parameter values  
+
+N <- N <- 8.773e6  # Population of New York 
+
+i0 <- 1 # Assuming one infected person started it all
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+```
+
+
+
+## Extracting the data for Stan Model
+
+```{r}
+# Cases
+cases <- covid_df$CASE_COUNT
+
+# times
+n_days <- length(cases)
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+```
+
+## Desigining the model
+
+### Utilizing Incidences
+
+We will be utilizing a SIR model of incidences with informative priors on our SIR parameters.
+
+
+What are incidences?
+
+In the SIR model, "incidence" is defined as the number of new cases of a disease that occur within a specific period, calculated by subtracting the total cases on day $n-1$ from the cases on day $n$ 
+
+$$ I_n = C_n - C_{n-1} $$
+
+This metric is crucial for analyzing the disease's transmission dynamics, as it quantifies the daily increase in cases, thereby offering insights into how rapidly the infection is spreading through the population.
+
+```{stan, eval=F, output.var="md"}
+for (i in 1:n_days-1) 
+  incidence[i] = y[i, 1] - y[i + 1, 1]; //S(t) - S(t + 1)
+```
+
+
+
+
+and the same negative-binomial likelihood from the model we used in the 1978 influneza inference  (to account for
+overdispersion, whereas e.g a Poisson distribution would constrain the
+variance to be equal to the mean) and we fit these incidence parameters
+to the data:
+
+```{stan, eval=F, output.var="md"}
+cases[1:(n_days-1)] ~ neg_binomial_2(incidence, phi);
+```
+
+### Informative priors
+
+Let's modify that model to add informative priors: 
+
+
+ We know from the literature that the incubation time (average time between infection and
+symptoms) and generation time (average time between the symptom onsets
+of the infectious and the infected) are around 5 days[^1]. Therefore
+the time between infection and infectiousness can't be so low.
+
+[^1]: *Qifang Bi, Yongsheng Wu, Shujiang Mei, Chenfei Ye, Xuan Zou,
+    Zhen Zhang, Xiaojian Liu, Lan Wei, Shaun A Truelove, Tong Zhang, et
+    al. Epidemiology and transmission of COVID-19 in shenzhen china:
+    Analysis of 391 cases and 1,286 of their close contacts. MedRxiv,
+    2020.* for the incubation time. *Tapiwa Ganyani, Cecile Kremer,
+    Dongxuan Chen, Andrea Torneri, Christel Faes, Jacco Wallinga, and
+    Niel Hens. Estimating the generation interval for COVID-19 based on
+    symptom onset data. medRxiv, 2020.* for the generation time
+
+Until now in our analysis, we have only used weakly-informative priors.But here we have accessible domain knowledge: we
+can refine our prior on $a$. In this case, it is easier to specify our
+domain knowledge on the inverse of $a$. We choose the informative prior
+$inv(a) \sim \mathcal{N}(6, 1)$, which means there is a priori a greater
+than 99% chance that our incubation time is between 3 and 9. 
+
+
+### Incorporating underreporting
+
+
+Let's start with adjusting for  underreporting, this is because during the initial stages of the pandemic tests were limited and resources were stretched thin. We add a single
+parameter `p_reported` is the proportion of cases which get reported.
+
+The `parameters` code block becomes:
+
+```{stan, eval=F, output.var="md"}
+parameters {
+  real<lower=0> gamma;
+  real<lower=0> beta;
+  real<lower=0> phi_inv;
+  real<lower=0, upper=1> p_reported; // proportion of infected (symptomatic) people reported
+}
+```
+
+The incidence computation in the `transformed parameters` block becomes:
+
+```{stan, eval=F, output.var="md"}
+for (i in 1:n_days-1){
+    incidence[i] =  (y[i, 1] - y[i+1, 1]) * p_reported;
+  }
+```
+
+We give `p_reported` a weakly-informative $\beta(1, 2)$ prior, which
+indicates that we are quite uncertain about this parameter, except that
+it's between 0 and 1 and shouldn't be too close to 1. In the `model`
+block:
+
+```{stan, eval=F, output.var="md"}
+p_reported ~ beta(1, 2);
+```
+
+
+## Adjusting for lockdown
+
+### Modeling control measures
+
+We model decreasing transmission due to governmental control measure by a logistic function: $\beta(t) = f(t) * \beta$, with $f(t) = \eta + (1 - \eta) * \frac{1}{1 + exp(\xi * (t - t_1 - \nu))}$, where $\eta$ is the decrease of transmission while control measures are fully in place, $\xi$ is the slope of the decrease, and $\nu$ is the delay (after the date of introduction of control measures) until the measures are 50% effective.
+
+In Stan, in the `functions` code block we add:
+
+```{stan, eval=FALSE, output.var="md"}
+real switch_eta(real t, real t1, real eta, real nu, real xi) {
+    return(eta+(1-eta)/(1+exp(xi*(t-t1-nu))));
+}
+```
+
+We add weakly-informative priors on the three parameters. $\eta \sim \beta(2.5, 4)$ which means we expect governmental measures to reduce transmission, but not all the way to zero. $\nu \sim exponential(1/5)$ which means the delay should be around a week but could be lower or quite higher. $\xi \sim \mathcal{U}(0.5, 1.5)$, which means the slope has to be positive.
+
+```{r}
+date_switch <- "2020-03-23" # date of introduction of control measures IN NYC
+
+tswitch <- covid_df %>% filter(date_of_interest < date_switch) %>% nrow() + 1 # convert time to number
+
+data_forcing <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases, tswitch = tswitch)
+```
+
+```{r}
+model_forcing <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/US-Covid_Inference/Stan_Models/SIR_Lockdown.stan")
+```
+
+
+
+```{r}
+fit_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1000,
+                        seed=4)
+```
+
+```{r}
+check_hmc_diagnostics(fit_forcing)
+```
+
+Details: (https://mc-stan.org/rstanarm/reference/adapt_delta.html)
+For the No-U-Turn Sampler (NUTS), the variant of Hamiltonian Monte Carlo used used by rstanarm, adapt_delta is the target average proposal acceptance probability during Stan's adaptation period. adapt_delta is ignored by rstanarm if the algorithm argument is not set to "sampling".
+
+The default value of adapt_delta is 0.95, except when the prior for the regression coefficients is R2, hs, or hs_plus, in which case the default is 0.99.
+
+These defaults are higher (more conservative) than the default of adapt_delta=0.8 used in the rstan package, which may result in slower sampling speeds but will be more robust to posterior distributions with high curvature.
+
+In general you should not need to change adapt_delta unless you see a warning message about divergent transitions, in which case you can increase adapt_delta from the default to a value closer to 1 (e.g. from 0.95 to 0.99, or from 0.99 to 0.999, etc). The step size used by the numerical integrator is a function of adapt_delta in that increasing adapt_delta will result in a smaller step size and fewer divergences. Increasing adapt_delta will typically result in a slower sampler, but it will always lead to a more robust sampler.
+
+
+```{r}
+fit_forcing_modified <- sampling(model_forcing, 
+                        data_forcing,
+                        iter = 1500,
+                        seed = 55,
+                        control = list(adapt_delta = .999,  # Increase adapt_delta to reduce divergences
+                                       max_treedepth = 15)  # Increase max_treedepth to avoid saturation
+                        )
+```
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_forcing_modified, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+```{r}
+traceplot(fit_forcing_modified, pars = c("gamma", "beta", "lp__"))
+```
+```{r}
+stan_dens(fit_forcing_modified,pars=c('gamma','beta','phi_inv'), separate_chains = TRUE)
+
+```
+```{r}
+fit_forcing_modified %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_median = median(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   #geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = c_mid, alpha=0.7)+
+   geom_line(mapping = aes(y=pred_median), color = 'red')+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain, scales = "free")
+```
+
+# SEIR MODEL
+
+
+### Incorportating incubation time and varying initial infections.
+
+We transform the SIR model into a SEIR model, where people are *Exposed*
+before being infected. We suppose that *Exposed* people are not
+contagious, whereas *Infectious* people are. Furthermore, we suppose
+that people are reported as soon as they become *Infectious*. We add a
+parameter $a$, where $\frac{1}{a}$ corresponds to the average time
+between being infected and becoming infectious (for simplicity we also
+use $\frac{1}{a}$ as the time between being infected and being
+reported).
+
+SEIR equations become:
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dE}{dt} &= \beta S \frac{I}{N} - a E\\
+ \frac{dI}{dt} &= aE - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$
+
+<img src="pictures/SEIR_tik.jpg" alt="SEIR graph" width="500" align="center"/>
+
+We add the same weakly-informative prior $N(0.4, 0.5)$ on $a$ that we
+added on $\gamma$, which means that we expect the average time between
+being infected and becoming infectious to be roughly between half a day
+and thirty days.
+
+The incidence is now the number of people leaving the E compartment, i.e
+$E(t) - E(t+1) + S(t) - S(t+1)$[^11].
+
+[^11]: E(t) - E(t+1) is the number of people leaving the E compartment
+    minus the number of people entering E. S(t) - S(t+1) is the number
+    of people entering E
+
+```{stan, eval=F, output.var = "md"}
+  for (i in 1:n_days-1){
+    incidence[i] = -(y[i+1, 2] - y[i, 2] + y[i+1, 1] - y[i, 1]) * p_reported; //E(t) - E(t+1) + S(t) - S(t+1)
+  }
+```
+
+We also allow the initial number of infected and exposed people to vary:
+we add parameters $i_0$ and $e_0$, with weakly informative priors
+$N(0, 10)$[^12]. Remember Section 3: we always want to minimize the
+number $K$ of parameters given to the ODE function. Thus we don't add
+$y_0$ as a parameter of the ODE function. We only add $i_0$ and $e_0$,
+and reconstruct $y_0$ in the ODE function. This way, we only add
+$\propto (N+1)*2 = 10$ ODEs to solve at each HMC step instead of
+$\propto (N+1) * 4 = 20$. This advice gets more important as the number
+of compartments gets bigger.
+
+[^12]: We keep $r_0 =0$: in February there might already be a few
+    recovered people, but their number can't be high enough to influence
+    transmission dynamics
+
+Thus the call to the ODE solver becomes:
+
+```{stan, eval=F, output.var = "md"}
+//real theta[3] = {beta, gamma, a}; //slow
+//y = integrate_ode_rk45(sir, y0, t0, ts, theta, x_r, x_i); 
+real theta[5] = {beta, gamma, a, i0, e0}; //fast
+y = integrate_ode_rk45(sir, rep_array(0.0, 4), t0, ts, theta, x_r, x_i);
+```
+
+And the SEIR code becomes:
+
+```{stan, eval=F, output.var="md"}
+  real[] sir(real t, real[] y, real[] theta, 
+             real[] x_r, int[] x_i) {
+
+      real N = x_i[1];
+      
+      real beta = theta[1];
+      real gamma = theta[2];
+      real a = theta[3];
+      real i0 = theta[4];
+      real e0 = theta[5];
+      
+      real init[4] = {N - i0 - e0, e0, i0, 0}; // we reconstruct y0
+      real S = y[1] + init[1];
+      real E = y[2] + init[2];
+      real I = y[3] + init[3];
+      real R = y[4] + init[4];
+      
+      real dS_dt = -beta * I * S / N;
+      real dE_dt =  beta * I * S / N - a * E;
+      real dI_dt = a * E - gamma * I;
+      real dR_dt =  gamma * I;
+      
+      return {dS_dt, dE_dt, dI_dt, dR_dt};
+  }
+```
