@@ -1,0 +1,161 @@
+---
+title: "NYC SEIR FIT FOR PAPER"
+author: "Varun V. Datta"
+format:
+  html: 
+    
+    toc: true
+    toc-depth: 6
+    toc-location: left
+    toc_float: true
+    df-print: paged
+    math: true
+    number_section: true 
+    page-layout: full
+    embed-resources: true
+---
+```{r}
+
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(gridExtra)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+
+```
+
+
+# Loading the Data and Pre-Processing it 
+
+```{r,message=FALSE}
+nyc_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/paper/Data/NYC_Gov/cases-by-day.csv")
+# Formatting the date into a proper date format
+nyc_df %>% mutate(date_of_interest = as.Date(date_of_interest, format = "%m/%d/%Y"))->nyc_df 
+# selecting the columns we need
+
+nyc_df %>% select(date_of_interest,CASE_COUNT) %>% rename(date = date_of_interest, cases = CASE_COUNT )->covid_df
+
+covid_df<- covid_df %>% filter(date <= as.Date("2020-06-25"))
+
+# This is around the time the first wave had seemingly ended
+covid_df
+```
+```{r}
+date_switch <- "2020-03-23" # date of introduction of control measures IN NYC
+
+tswitch <- covid_df %>% filter(date < date_switch) %>% nrow() + 1 # convert time to number
+
+
+N <- N <- 8.773e6  # Population of New York 
+
+i0 <- 1 # Assuming one infected person started it all
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+
+
+# Cases
+cases <- covid_df$cases
+
+# times
+n_days <- length(cases)
+
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_forcing <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases, tswitch = tswitch)
+```
+
+
+# Loading the model
+
+```{r}
+model_forcing <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/paper/Models/Covid 19/SEIR_Forcing_Informative.stan")
+```
+
+
+# Simulating and sampling from the posterior
+
+```{r}
+fit_forcing1 <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4)
+```
+
+
+### Model Diagnsstics 
+
+```{r}
+check_hmc_diagnostics(fit_forcing1)
+```
+
+
+## Saving the Fit for use in Paper
+
+
+```{r}
+
+#saveRDS(fit_forcing1, file = "stan_model_fit_forcing1.rds")
+
+```
+
+
+
+
+From here we know to increase adapt delta 
+
+
+
+# Improving the model and simulating it 
+
+```{r}
+fit_forcing2 <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4,  control = list(adapt_delta = 0.9999  # Increase adapt_delta to reduce divergences
+                                      )) 
+```
+## Model Diagnostics
+
+```{r}
+check_hmc_diagnostics(fit_forcing2)
+```
+
+
+## Saving the fit for use in the Paper
+
+```{r}
+#saveRDS(fit_forcing2, file = "stan_model_fit_forcing2.rds")
+
+```
+
+
+# Modifying the Tree Depth
+
+```{r}
+fit_forcing_modified2 <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4,  control = list(adapt_delta = 0.9999,max_treedepth =15  # Increase adapt_delta to reduce divergences
+                                      ))  # Increase max_treedepth to avoid saturation)
+```
+## Diagonstics
+```{r}
+check_hmc_diagnostics(fit_forcing_modified2)
+```
+
+
+## Saving the fit for the Paper
+
+```{r}
+#saveRDS(fit_forcing_modified2 , file = "stan_model_fit_forcing3.rds")
+
+```
+
+
+
+
+This model will be interpreted in the Paper.

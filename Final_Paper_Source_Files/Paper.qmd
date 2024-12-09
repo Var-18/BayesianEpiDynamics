@@ -1,0 +1,2550 @@
+---
+title: "Comparative Bayesian Analysis of Epidemiological Data in Disease Outbreaks"
+
+author:
+  - name: "Varun V. Datta"
+    affiliation: "University of Toronto Scarborough"
+  - name: "Dr. Kenneth Butler"
+    affiliation: "University of Toronto Scarborough"
+number-sections: true
+format:
+  html: 
+    
+    toc: true
+    toc-depth: 6
+    toc-location: left
+    toc_float: true
+    df-print: paged
+    math: true
+    theme: journal
+    number_section: true 
+    page-layout: full
+    embed-resources: true
+  
+  pdf:
+    toc: true  
+    toc-depth: 6
+    include-in-header: 
+      text: '\pagenumbering{arabic}' 
+    number_section: true 
+    toc_title: "Table of Contents"
+    df_print: kable 
+---
+
+```{r,echo=FALSE}
+options(warn = -1)  # Turn off warnings
+options("show.error.messages" = FALSE)  # Turn off error messages
+```
+
+\newpage
+
+# Introduction {#introduction}
+
+Bayesian inference has significantly advanced in recent years, propelled by developments in **Markov Chain Monte Carlo (MCMC)** sampling algorithms and the proliferation of **probabilistic programming**. This approach has revolutionized epidemiology by enabling the integration of prior knowledge into the analysis, shifting the role of researchers from mere observers to **active participants** in the inference process. This integration enriches the analysis and tailors it more closely to specific contexts, leveraging the accumulated expertise within the field to achieve nuanced insights`(Garcia & Abad, 2014)`.
+
+The onset of the COVID-19 pandemic further highlighted the need for versatile statistical models capable of handling complex and uncertain data. Bayesian models, particularly those not limited to exponential families or normal distributions, have proven invaluable. They adapt flexibly to the dynamic nature of outbreak data, offering deep and actionable insights into disease spread and informing public health responses.
+
+As emphasized in existing literature, Bayesian methods transform researchers' experiences and prior knowledge into crucial components of data analysis, enhancing both the depth and applicability of epidemiological research. This transformative ability is further evidenced by Gelman's contributions, notably his work on the No-U-Turn sampler and Bayesian data analysis, which underscore the robustness of Bayesian methods in handling complex epidemiological data. These methodologies provide a powerful framework for analyzing outbreaks, demonstrating their applicability and effectiveness in real-world scenarios `(Hoffman & Gelman, 2014; Gelman et al., 2013)`.
+
+**References:**
+
+-   Garcia, L. P., & Abad, F. J. (2014). Bayesian inference in public health: A Latin American perspective. Ciência & Saúde Coletiva, 30(4), 703-714.  [Link to Article](https://www.scielosp.org/article/csp/2014.v30n4/703-714/).
+
+-   Hoffman, M. D., & Gelman, A. (2014). The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo. Journal of Machine Learning Research, 15(1), 1593-1623.
+
+-   Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., & Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). Chapman and Hall/CRC.
+
+\newpage
+
+# Objective {#Objective}
+
+The primary objective of this study is to employ Bayesian statistical methods to analyze epidemiological data from significant disease outbreaks, specifically COVID-19 and influenza. 
+
+This research aims to:
+
+-   **Model Disease Transmission Dynamics**: Utilize Bayesian models to describe the transmission mechanisms of instances of Influenza and Covid 19 outbreaks, capturing the complexity and variability of these disease outbreaks.
+
+-   **Estimate Epidemiological Parameters**: Determine crucial parameters such as the basic reproduction number ($R_0$), effective reproduction number ($R_t$), infection rate, incubation period, and recovery rates to further explore the dynamics of these outbreaks.
+
+-   **Utilize Probabilistic Frameworks**: "We will be utilizing the probabilistic programming language Stan, integrated within R, to leverage the revolutionary Hamiltonian Monte Carlo (HMC) No-U-Turn Sampler to fit robust epidemiological models using real-life outbreak data.
+
+-   **Compare Methodological Approaches**: Contrast the Bayesian estimates with those derived from classical or frequentist statistical methods. This comparison aims to evaluate the robustness and efficiency of Bayesian approaches in real-world epidemiological scenarios, thereby showcasing the potential benefits and limitations of both statistical paradigms.
+
+By focusing on these objectives, the study intends to provide a comprehensive analysis that enhances the understanding of infectious disease dynamics and supports the development of effective public health responses.
+
+
+
+**References:**
+
+- Hoffman, M. D., & Gelman, A. (2014). The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo. Journal of Machine Learning Research, 15(1), 1593-1623.
+
+\newpage
+
+# Background {#Background}
+
+## What is Bayesian Inference?
+
+Bayesian inference is the process of fitting a probability model to a data set in order to summarize the results by a probability distribution on the parameters of the model and on unobserved quantities such as predictions for new observations. `(“Bayesian Data Analysis” by Gelman et al)`
+
+Before we dive into fitting a probability model and getting the output of this probability distribution that takes care of everything we want to understand, lets define and explain a few Bayesian inference terms that will be used through this study.
+
+
+
+## Bayesian Inference Fundamentals
+
+The backbone of Bayesian inference or the cornerstone of Bayesian Inference is the **Bayes' Theorem**.
+
+
+**Bayes' Theorem:** 
+
+$$P(\theta| data) = \frac{P(data |\theta) \cdot P(\theta) }{P(data)}$$ Where:
+
+-   $P(\theta| data)$ is the **posterior** probability of parameter $\theta$ given the data.This is what we aim to compute in Bayesian analysis.
+
+-   $P(data |\theta)$ is the **likelihood**: how likely the observed data is under different hypothesis and parameter values.It is the weight given to different parameter values based on how well they explain the observed data.
+
+-   $P(\theta)$ is the **prior** probability of the parameter before seeing the data. It encapsulates our beliefs about the values of $\theta$ before seeing the data.
+
+In epidemiology, priors can stem from previous studies, expert opinion, or established biological reasoning.
+
+-   $P(data)$ is the **evidence** term or the **marginal likelihood** that acts as a normalizing constant: ensures that the posterior distribution integrates to 1 or posterior probabilities add to 1. This term is particularly crucial when comparing models, as it integrates over all possible parameter values, weighting them by their likelihood and prior probability.
+
+**References:**
+ 
+-   Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., & Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). Chapman and Hall/CRC.
+-   Fleet, David (2024). Bayesian Methods. CSCC11 Course Notes. [Retrieved from here](https://www.cs.toronto.edu/\~fleet/courses/C11/notesReadings.html)
+-   Robert, C. P. (2007). The Bayesian Choice: From Decision-Theoretic Foundations to Computational Implementation (2nd ed.). Springer.
+
+\newpage
+
+## Bayesian vs Frequentist Inference
+
+**Definition of Probability**
+
+-   Bayesian: Probability is a measure of belief or certainty about an event, which updates as new evidence is presented.
+
+-   Frequentist: Probability is the long-run frequency of events derived from repeated experiments, avoiding subjectivity.
+
+**Handling of Parameters**
+
+-   Bayesian: Treats *parameters as random variables*, incorporating prior distributions to reflect prior knowledge or beliefs.
+
+-   Frequentist: Treats *parameters as fixed but unknown quantities*, basing inference solely on the current data without priors.
+
+**Incorporation of Prior Information**
+
+-   Bayesian: Formally includes prior information through prior distributions, useful when historical data or expert knowledge exists.
+
+-   Frequentist: No formal mechanism for including prior knowledge; the analysis relies only on data (Likelihood) from the current study.
+
+**Interpretation of Results**
+
+-   Bayesian: Results are expressed as a probability distribution (*posterior*), providing a direct probabilistic interpretation of parameters and credible intervals.
+
+-   Frequentist: Uses confidence intervals and p-values, related to the long-run frequency of observing such data under the null hypothesis, not probabilities of hypotheses.
+
+**Analysis Flexibility**
+
+-   Bayesian: Allows for sequential updating of beliefs as new data or domain specific literature  arrives.
+
+-   Frequentist: Typically lacks formal mechanisms for updating estimates with new data without new analysis.
+
+**Computational Complexity**
+
+-   Bayesian: Historically more computationally intensive due to methods like Markov Chain Monte Carlo (MCMC), but recent advancements(`stan`, HMC) have improved accessibility.
+
+-   Frequentist: Generally simpler computationally, particularly for large samples, though this gap is narrowing with new technologies.
+
+
+**References:**
+
+- [Frequentist v/s Bayesian Statistics Medium Article](https://medium.com/@roshmitadey/frequentist-v-s-bayesian-statistics-24b959c96880)
+
+## Importance of Bayesian Inference in Epidemiology
+
+In epidemiology, Bayesian methods are invaluable for:
+
+-   **Modeling Disease Spread:** Estimating transmission rates and other crucial parameters which often cannot be directly observed.
+
+-   **Incorporating Uncertainty:** Handling various sources of uncertainty, such as reporting biases or incomplete data, more explicitly than traditional frequentist methods.
+
+-   **Updating Beliefs:** Adapting predictions as new data becomes available, which is crucial in real-time during an outbreak.
+
+The Bayesian framework's ability to merge prior information with new data allows for more nuanced and dynamic interpretations of epidemiological data, making it a powerful tool for public health decision-making.
+
+By using Bayesian inference, epidemiologists can not only estimate the parameters but also quantify the uncertainty of these estimates, providing a more comprehensive understanding of the underlying health phenomena.`(Broemeling, 2013)`
+
+**References:**
+
+-   Broemeling, L. D. (2013). Bayesian Methods in Epidemiology. Chapman & Hall/CRC Biostatistics Series. Chapman and Hall/CRC.
+
+\newpage
+
+## The 3 steps for Bayesian Data Analysis
+
+In order to fit the probability model on any data and get a resulting probability distribution on everything you want to work with there are 3 high level steps which serve as the blue print for the whole process.
+
+**1. Setting up a full probability model—** a joint probability distribution for all observable and unobservable quantities in a problem. The model should be consistent with knowledge about the underlying scientific problem and the data collection process.
+
+**2. Conditioning on observed data:** calculating and interpreting the appropriate posterior distribution—the conditional probability distribution of the unobserved quantities of ultimate interest, given the observed data.
+
+**3. Evaluating the fit of the model and the implications of the resulting posterior distribution:** how well does the model fit the data, are the substantive conclusions reasonable, and how sensitive are the results to the modeling assumptions in step 1? In response, one can alter or expand the model and repeat the three steps.
+
+**References:**
+
+- Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., & Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). Chapman and Hall/CRC.
+
+\newpage
+
+
+## Epidemiological Models 
+
+Epidemiological Models are quintessential for understanding, interpreting and simulating the spread of infectious diseases. 
+These models enable Researchers, Epidemiologists and policy makers to predict disease dynamics, evaluate intervention strategies, and allocate resources effectively.
+
+With that in mind, we will be utilizing the two following epidemiological models in this study:
+
+
+1. Susceptible-Infectious-Recovered (SIR) model
+
+2. Susceptible-Exposed-Infectious-Recovered (SEIR) model
+
+
+## SIR model
+
+The Susceptible-Infectious-Recovered (SIR) model is utilized to analyze the spread and control of infectious diseases within a population.
+
+The Susceptible-Infected-Recovered (SIR) mo0del splits the population in three time-dependent compartments:
+
+- Susceptible (S)
+
+- Infected and Infectious (I)
+
+- Recovered and not infectious (R).
+
+When a susceptible individual comes into contact with an infectious individual, the former can become infected for some time, and then recover and become immune.
+
+The dynamics can be summarized graphically:
+
+<img src="Images/download.png" alt="My Image" width="600"/>
+
+The temporal dynamics of the subsets of the total population in each of these compartments are established by the following system of Ordinary Differential Equations(ODEs):
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dI}{dt} &= \beta  S  \frac{I}{N} - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$ 
+
+where
+
+-   $S(t)$ is the number of people susceptible to becoming infected (no immunity),
+
+-   $I(t)$ is the number of people currently infected (and infectious),
+
+-   $R(t)$ is the number of recovered people (we assume they remain immune indefinitely),
+
+-   $\beta$ is the constant rate of infectious contact between people,
+
+-   $\gamma$ the constant recovery rate of infected individuals.
+
+### Understanding the ODEs
+
+The proportion of infected people among the population is $\frac{I}{N}$. At each time step, given uniform contacts, the probability for a susceptible person to become infected is thus $\beta\frac{I}{N}$, with $\beta$ the average number of contacts per person per time, multiplied by the probability of disease transmission when a susceptible and an infected subject come in contact.
+
+Hence, at each time step, $\beta S \frac{I}{N}$ susceptible individuals become infected, meaning $\beta S \frac{I}{N}$ people leave the $S$ compartment and $\beta S \frac{I}{N}$ people enter the $I$ compartment.
+
+Similarly, the recovery of an infected individual is taking place at rate $\gamma$, and thus the number of infected individuals decreases with speed $\gamma I$ while the number of recovered grows at the same speed.
+
+## SEIR Model
+
+We transform the SIR model into a SEIR model, where people are Exposed before being infected. 
+
+We suppose that Exposed people are not contagious, whereas Infectious people are. 
+
+Furthermore, we suppose that people are reported as soon as they become Infectious.
+
+We add a parameter $a$(in literature $\sigma$  is also to signify this parameter), where $\frac{1}{a}$ corresponds to the average time between being infected and becoming infectious (for simplicity we also use $\frac{1}{a}$ as the time between being infected and being reported).
+
+SEIR equations become: <img src="Images/SEIR" alt="My Image" width="600"/>
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dE}{dt} &= \beta S \frac{I}{N} - a E\\
+ \frac{dI}{dt} &= aE - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$
+
+### Understanding the SEIR ODEs and transitions
+
+In the SEIR model, there is an additional compartment for exposed individuals ($E$). The steps are as follows:
+
+1.  Susceptible individuals ($S$) become exposed ($E$) at the rate of $\beta S \frac{I}{N}$.
+2.  Exposed individuals ($E$) become infected ($I$) at rate $a$, representing the incubation period of the disease.
+3.  Infected individuals ($I$) recover at rate $\gamma$.
+
+Therefore, the key differences and additions in the SEIR model are: - An additional compartment $E$ for exposed individuals. - A new transition rate $a$ from exposed ($E$) to infected ($I$).
+
+The transitions are:
+
+-   $S \rightarrow E$ at rate $\beta S \frac{I}{N}$.
+
+-   $E \rightarrow I$ at rate $a E$.
+
+-   $I \rightarrow R$ at rate $\gamma I$.
+
+### Assumptions and conditions for SIR and SEIR models
+
+-   Births and Deaths are not contributing to the dynamics and the total population $N=S+I+R$ remains constant.
+
+-   Recovered individuals do not become susceptible again over time.
+
+-   The infection rate $\beta$ and recovery rate $\gamma$ are constant.
+
+-   The population is homogeneous
+
+-   Individuals meet any other individual uniformly at random (homogeneous mixing) and recovery time follows an exponential distribution with mean $\frac{1}{\gamma}$.
+
+-   Replacing the integer number of people in each compartment by a continuous approximation is legitimate (the population is big enough).
+
+
+### Important quantities associated with SIR and SEIR models
+
+Understanding the key quantities in the SIR and SEIR models helps us analyze the dynamics of disease spread and evaluate the effectiveness of interventions.
+
+1.  **Basic Reproduction Number** $R_0$
+
+$$
+R_0 = \frac{\beta}{\gamma}
+$$
+
+The basic reproduction number, ($R_0$), represents the average number of secondary infections produced by one infected individual in a fully susceptible population. 
+
+2. **Effective Reproduction Number** $R_t$
+
+$$
+R_t = R_0 \frac{S(t)}{N}
+$$
+
+The effective reproduction number, ($R_t$), accounts for the changing number of susceptible individuals over time and indicates the average number of secondary infections at time ($t$).
+
+
+
+3.  **Peak Infectious Population**
+
+$$
+I_{max} = N \left( 1 - \frac{1}{R_0} \right)
+$$
+
+The peak infectious population is the maximum number of individuals infected at the same time during the outbreak.
+
+4. **Incubation Period** $T_{inc}$
+
+The incubation period, ($Time_{inc}$), is the time interval between the initial infection and the onset of symptoms. It is a critical factor in understanding the dynamics of infectious diseases and can significantly affect the transmission rate and the control measures.
+
+$$
+Time_{inc} = \frac{1}{a}
+$$
+
+
+
+5. **Recovery Time** $T_{rec}$
+
+The recovery time, ($T_{rec}$), is the average duration an individual remains infectious before recovering or being removed from the infectious pool. This period is essential for determining the duration of infection and impacts the overall transmission dynamics.
+
+$$
+T_{rec} = \frac{1}{\gamma}
+$$
+
+Here, $\gamma$ is the recovery rate, representing the proportion of infected individuals recovering per unit time. The recovery time helps in understanding the disease's progression and the time needed for infected individuals to cease being infectious.
+
+**References:**
+
+-  [GitHub Repository for Disease Transmission Workflow](https://github.com/charlesm93/disease_transmission_workflow/tree/main/data)
+
+-  [MC-Stan Boarding School Case Study](https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.html#2_using_simulated_data_to_understand_our_model)
+
+- [Harvard T.H. CHAN School of Public Health: Infectious Disease Models](https://ccdd.hsph.harvard.edu/introduction-to-infectious-disease-modeling/week-2-infectious-disease-models-i/)
+
+## Using the Bayesian approach on SIR 
+
+By applying Bayesian inference to the SIR, we aim to estimate the transmission rate and recovery rate, and incorporate prior information and new data to dynamically update our understanding of the epidemic.
+
+This approach will allow us to quantify uncertainty in our estimates and make probabilistic predictions about the future course of the epidemic, thus providing valuable insights for public health interventions.
+
+## Computational Tools and Techniques for Bayesian Analysis
+
+We will be utilizing a probabilistic framework provided to us by a language [`STAN`](https://mc-stan.org/). We are able to utilize `STAN` with help of an interface within R: `RStan`.
+
+We will utilize `RStan` to design, compile and simulate  SIR (Susceptible-Infectious-Recovered) and SEIR (Susceptible-Exposed-Infectious-Recovered) models. 
+
+
+### STAN
+
+STAN is a probabilistic programming language for specifying statistical models and performing Bayesian inference. It is particularly well-suited for complex models involving latent variables and hierarchical structures. 
+
+STAN employs Markov Chain Monte Carlo (MCMC) and Hamiltonian Monte Carlo (HMC) techniques to efficiently sample from the posterior distributions of model parameters. The flexibility of `STAN` allows for the integration of ordinary differential equations (ODEs) to describe the dynamic behavior of epidemiological models.
+
+
+**References:**
+
+- Hoffman, M. D., & Gelman, A. (2014). The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo. Journal of Machine Learning Research, 15(1), 1593-1623.
+
+- Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., & Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). Chapman and Hall/CRC.
+
+### Markov Chain Monte Carlo (MCMC)
+
+Markov Chain Monte Carlo (MCMC) is a class of algorithms used to sample from probability distributions when direct sampling is challenging. In the context of this study, MCMC is employed to estimate the posterior distributions of the SIR and SEIR model parameters. By generating a sequence of samples that approximate the target distribution, MCMC provides a practical approach to Bayesian inference, enabling the estimation of model parameters and their uncertainties.
+
+**References:**
+
+- [Understanding Markov Chain Monte Carlo (MCMC)](https://www.publichealth.columbia.edu/research/population-health-methods/markov-chain-monte-carlo). 
+
+- [Markov Chain Monte Carlo for Machine Learning](https://machinelearningmastery.com/markov-chain-monte-carlo-for-probability/). 
+
+- [Metropolis–Hastings Algorithm](https://en.wikipedia.org/wiki/Metropolis%E2%80%93Hastings_algorithm)
+
+- [MCMC Sampling Methods](https://twiecki.io/blog/2015/11/10/mcmc-sampling/)
+
+### Hamiltonian Monte Carlo (HMC)
+
+Hamiltonian Monte Carlo (HMC) is an advanced MCMC method that uses Hamiltonian dynamics to propose new samples. HMC reduces the correlation between successive samples, improving the efficiency of the sampling process. This method is particularly effective for high-dimensional and complex models, such as the SIR and SEIR models used in this study. By leveraging HMC, STAN can explore the parameter space more effectively, leading to more accurate and reliable posterior estimates.
+
+
+**References:**
+
+- [Neal, Radford M., "MCMC using Hamiltonian dynamics"](https://arxiv.org/abs/1206.1901)
+
+- [Michael Betancourt's Conceptual Introduction to Hamiltonian Monte Carlo](https://arxiv.org/abs/1701.02434)
+
+- [Stan User's Guide on HMC](https://mc-stan.org/docs/2_19/reference-manual/hamiltonian-monte-carlo.html)
+
+
+
+### ODE Solvers: RK45 and Backward Differentiation
+
+Ordinary differential equations (ODEs) are integral to modeling the dynamics of infectious diseases. The RK45 (Runge-Kutta) method and backward differentiation are two numerical techniques used to solve ODEs within STAN.
+
+RK45 is an explicit solver that provides a good balance between accuracy and computational efficiency, while backward differentiation is an implicit method suitable for stiff ODE systems.
+
+In this study, these solvers are used to simulate the progression of the disease over time, capturing the complex interactions between different compartments of the epidemiological models.
+
+**References:** 
+
+- [Springer, Solving Differential Equations in R](https://link.springer.com/book/10.1007/978-3-642-28070-2)
+
+- Cohen, Scott D, and Alan C Hindmarsh. 1996. “CVODE, a Stiff/Nonstiff ODE Solver in C.” Computers in Physics 10 (2): 138–43.
+
+
+### Basics of STAN Sampling and Hyperparameters
+
+STAN's sampling process involves initializing the model parameters and then using MCMC specifically HMC to generate samples from the posterior distribution. The efficiency and accuracy of this process depend on the choice of hyperparameters, such as step size and number of iterations. Proper tuning of these hyperparameters is crucial for obtaining reliable results. In this study, we carefully select and tune hyperparameters to ensure the convergence and stability of the sampling process, enabling robust Bayesian inference for the SIR and SEIR models.
+
+**References:**
+
+-  [Stan Documentation](https://mc-stan.org/users/documentation/)
+
+-  [Stan Tuning Parameters Guide](https://mc-stan.org/docs/2_27/reference-manual/hmc-algorithm-parameters.html)
+
+-  [MC-Stan Epidemiology Case Studies](https://mc-stan.org/users/documentation/case-studies/)
+
+
+### Exploring Hamiltonian Monte Carlo (HMC) and MCMC
+
+Imagine you are tasked with mapping a complex landscape that represents the probability distribution of model parameters. This landscape has hills (peaks in the probability distribution) and valleys (troughs), and you need to cover it as thoroughly as possible.
+
+One can attempt this task with Traditional MCMC and HMC methods
+
+#### Traditional MCMC Methods
+
+-   **Analogy:** Walking through this landscape on foot.
+
+-   **Characteristics:** You move randomly, which can be slow and inefficient. This random walk behavior results in high autocorrelation between successive samples and slow convergence, akin to frequently retracing your steps in the same small area before moving on.
+
+-   **Random Walk:** Your movement is somewhat random. You decide the next step based on a combination of your current location and some randomness. This is similar to the Metropolis-Hastings algorithm, a specific type of MCMC.
+
+-   **Local Decisions:** Each step is decided locally, meaning you only look at the immediate surroundings to decide where to go next. Over time, you hope to cover the entire mountain range, building a picture of its overall shape.
+
+-   **Slow Exploration:** This process can be slow because you're often taking small steps and can get stuck in valleys or spend a lot of time on ridges, making it inefficient for exploring large or complex terrains.
+
+#### Hamiltonian Monte Carlo (HMC)
+
+-   **Analogy:** Riding a bicycle through the terrain.
+
+-   **Characteristics:** The bicycle’s momentum helps you glide smoothly over hills and valleys, allowing you to cover more ground quickly and efficiently. In HMC, this momentum is derived from Hamiltonian dynamics, which uses gradients (slopes of the terrain) to guide the sampling process, thereby reducing the randomness of movements compared to traditional MCMC.
+
+-   **Energy-Based Movement:** Your movement is governed by energy principles, similar to how physical systems move. You use potential energy (related to the height of the mountain) and kinetic energy (related to your speed) to guide your path.
+
+-   **Inertia:** You have inertia, meaning you can move across the terrain in a more direct and efficient way. This allows you to traverse large areas more quickly and avoid getting stuck in local features.
+
+-   **Efficient Exploration:** This method allows for much faster exploration of the mountain range because you're not limited to local steps. Instead, you can make large, informed leaps across the terrain, giving you a more comprehensive view in less time.
+
+#### Application in Bayesian Modeling: SIR and SEIR Models
+
+When using `STAN` to simulate the posterior distribution of parameters in epidemiological models like SIR (Susceptible, Infected, Recovered) or SEIR (Susceptible, Exposed, Infected, Recovered), HMC provides distinct advantages:
+
+-   **Efficient Sampling:** By leveraging both the current position (current parameter values) and momentum (direction and speed of the proposed moves), HMC navigates the parameter space more effectively than traditional MCMC. This is particularly useful in complex models where parameters interact in non-linear ways, as often seen in epidemiological models.
+
+-   **Reduced Autocorrelation:** The cycling analogy helps us visualize how using momentum allows HMC to escape local optima and explore more of the parameter space without getting trapped. This leads to samples that are less correlated, providing a more varied and representative set of parameter values from the posterior.
+
+##### Practical Example:
+
+-   **Model Setup:** Consider an SIR model implemented in Stan, starting with a population of 100 individuals, where one individual is initially infected.
+
+-   **Parameter Estimation:** We set priors for the infection rate ($\beta$) and recovery rate ($\gamma$), perhaps based on historical data or expert opinion. Stan uses HMC to draw samples from the posterior distribution of these parameters, efficiently exploring their feasible values given the observed data.
+
+-   **Convergence and Diagnostics:** As the HMC algorithm runs, it generates multiple chains that explore the parameter space. The efficiency of HMC helps these chains to converge quickly to the true parameter values, providing robust estimates and credible intervals.
+
+
+**References for the Explanations, Analogies and Examples:**
+
+- Neal, Radford M. "MCMC using Hamiltonian dynamics." *arXiv preprint arXiv:1206.1901* (2012). [Link to Document](https://arxiv.org/abs/1206.1901)
+
+- Betancourt, Michael. "A conceptual introduction to Hamiltonian Monte Carlo." *arXiv preprint arXiv:1701.02434* (2017). [Link to Document](https://arxiv.org/abs/1701.02434)
+
+- Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., & Rubin, D. B. (2013). Bayesian Data Analysis (3rd ed.). Chapman and Hall/CRC.
+
+- Hoffman, Matthew D., and Andrew Gelman. "The No-U-Turn Sampler: adaptively setting path lengths in Hamiltonian Monte Carlo." *Journal of Machine Learning Research* 15.1 (2014): 1593-1623. [Link to Paper](http://www.jmlr.org/papers/volume15/hoffman14a/hoffman14a.pdf)
+
+
+#### Conclusion
+
+Using HMC in Stan for simulating posterior distributions in models like SIR or SEIR offers a substantial improvement over traditional MCMC methods. The cycling analogy underscores how momentum and informed directional choices significantly enhance the exploration of complex statistical landscapes, leading to faster convergence and more reliable estimates.
+
+This makes HMC an invaluable tool in the arsenal of Bayesian inference, particularly for real-world data where the underlying dynamics are complex and nuanced.
+
+\newpage
+
+
+# Analysis and Results:
+
+To establish best practices for utilizing **STAN** in epidemiological analyses, extensive literature reviews were undertaken. This approach enabled us to define a foundational methodology and identify the most effective techniques for constructing models in STAN.
+
+A pivotal reference in our study was the [**A STAN Guide to Inference with Epidemiological Data**](https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.html#2_using_simulated_data_to_understand_our_model), which analyzed data from both the 1978 boarding school influenza outbreak and the first wave of COVID-19 in Switzerland. This resource was instrumental in providing guidelines on troubleshooting and developing robust, informative models.
+
+Leveraging insights from the [**A STAN Guide to Inference with Epidemiological Data**](https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.html#2_using_simulated_data_to_understand_our_model) and other scholarly sources, we applied the SIR and SEIR models with various adaptations. In order to build upon the models presented in this guide, we customized the SIR and SEIR frameworks to better align with our specific datasets, which include:
+
+- **Influenza 1978 Boarding School Outbreak**
+
+- **New York City COVID-19 Wave 1 Data, 2020**
+
+These modifications were crucial in enhancing our ability to interpret the dynamics and sensitivity of parameters within these epidemiological models across different outbreak scenarios.
+
+
+
+## Exploring the Datasets
+
+### Influenza 1978 Boarding School Outbreak
+
+#### Background 
+
+In a documented outbreak at a school, a substantial proportion of the student body was affected, with 512 out of 763 boys confined to bed due to illness at various points during the event.
+
+This data was originally reported in 1978 `(source: Anonymous)` and later analyzed by De Vries et al. in 2006. The high prevalence underscores the severity of the outbreak and highlights the need for further investigation into its epidemiological characteristics and the effectiveness of the response measures implemented.
+
+-   **Least Squares Approach**:
+    -   Fit a deterministic or frequentist approach using least squares on the 1978 boarding school data set.
+    -   Least squares is derived from likelihood estimation.
+
+-   **SIR Model** :
+    -   Apply an SIR model following the methodology in the case study.
+
+-   **SEIR Model Comparison**:
+    -   Fit an SEIR model to compare the level of insight gained from SIR vs. SEIR models.
+
+This analysis focuses on an influenza outbreak in a boarding school in North England during 1978, involving the reemerging A/H1N1 strain. The dataset captures the daily number of children confined to bed due to the illness.
+
+**References:**
+
+- Anonymous (1978). "EPIDEMIOLOGY: Influenza in a boarding school." *British Medical Journal*, 4 March 1978, p.587.
+
+- [Background Information on Influenza Outbreaks](https://search.r-project.org/CRAN/refmans/epimdr/html/flu.html)
+
+- [Data Documentation and Analysis Details](https://rdrr.io/cran/outbreaks/man/influenza_england_1978_school.html)
+
+- [BMJ Article on the Dataset](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1603269/pdf/brmedj00115-0064.pdf)
+
+\newpage
+
+
+### New York City 2020 COVID-19 Data (Wave 1)
+
+#### Background
+
+The dataset to be used represents the first wave of the COVID-19 pandemic in New York City, sourced from the [NYC Health Coronavirus GitHub repository](https://github.com/nychealth/coronavirus-data), which is linked via the NYC Open Data website.
+
+- **SIR Model with Weakly Informative Priors**:
+  - We will employ the previously established weakly informative prior-based SIR model to analyze the spread of COVID-19 during the initial outbreak.
+
+- **Least Squares Optimization**:
+  - A least squares optimization approach will be applied to refine the model parameters, enhancing the fit to the observed data.
+
+- **Comparison**:
+  - We will conduct a comparative analysis between the outcomes of the weakly informative prior-based SIR model and the least squares optimization approach to evaluate their respective accuracies and efficacies.
+
+- **Advanced SIR Model**:
+  - An advanced SIR model will be developed, incorporating appropriate priors and adjustments for real-world variables such as lockdown measures and potential underreporting of cases.
+
+- **Model Troubleshooting and Diagnostics**:
+  - Troubleshooting procedures will be implemented, and various diagnostic measures will be applied to ensure the robustness and reliability of the models.
+
+
+**References**:
+
+- [NYC Health Coronavirus GitHub repository](https://github.com/nychealth/coronavirus-data)
+
+- [COVID-19 Daily Counts of Cases, Hospitalizations, and Deaths (NYC Open Data)](https://data.cityofnewyork.us/Health/COVID-19-Daily-Counts-of-Cases-Hospitalizations-an/rc75-m7u3/about_data)
+
+
+## R Libraries Utilized by the study
+
+By following these steps, we aimed to develop a comprehensive understanding of how different models and approaches perform across these two data sets and scales.
+
+We will be using the following libraries
+To analyze the dataset, several R packages were employed:
+
+- `deSolve` for solving differential equations used in the SIR and SEIR models.[1]
+- `outbreaks` for accessing outbreak data.[2]
+- `tidyverse` for data manipulation and visualization.[3]
+- `tidybayes` for Bayesian analysis to complement the frequentist approaches.[4]
+- `rstan` for running Stan models from R, used particularly in Bayesian analysis.[5]
+- `gridExtra` for arranging multiple grid-based plots.[6]
+
+
+
+
+
+```{r, message=FALSE,warning=FALSE}
+
+
+library(deSolve)
+library(outbreaks)
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(gridExtra)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+
+
+```
+
+**References:**
+
+- 1 Soetaert, K., Petzoldt, T., Setzer, R.W. (2010). Solving Differential Equations in R: Package deSolve. Journal of Statistical Software
+- 2: Outbreaks documentation. CRAN R-project.
+- 3: Wickham, H. (2017). Tidyverse: Easily Install and Load the 'Tidyverse'. CRAN R-project.
+- 4: Kay, M. (2020). Tidybayes: Tidy Data and Geoms for Bayesian Models. CRAN R-project.
+- 5: Stan Development Team (2020). RStan: the R interface to Stan. CRAN R-project.
+- 6: Auguie, B. (2017). GridExtra: Miscellaneous Functions for "Grid" Graphics. CRAN R-project.
+
+
+## Building an SIR model
+
+We utilize the concept of a **sampling distribution / likelihood** represented as
+$$
+p({Y} \mid \theta)
+$$ 
+
+which basically describes the number of cases or our data (${Y}$ is generated) is generated given a set of model parameters $\theta$.
+
+Our objective here is the utilize Bayesian Inference Techniques in determining the most plausible parameter values $\theta$ based on observed data ${Y}$ and we will be using **posterior distribution**: $p(\theta \mid {Y})$ to achieve our goal. Bayesian inference updates our beliefs about the parameters after seeing the data, as described by Bayes' rule:
+
+$$
+p(\theta \mid {Y}) \propto p({Y} \mid \theta) \times p(\theta)
+$$
+
+Here, $p({Y} \mid \theta)$ is the sampling distribution,$p(\theta)$ is the **prior distribution** which encapsulates what we know about the parameters before seeing the data,and $\propto$ denotes "proportional to".
+
+### Sampling Distribution
+
+In a compartmental model like the SIR model, specific transmission parameters and initial conditions are utilized to predict or simulate the dynamics of an epidemic. 
+
+The most important prediction any model could make is the number of infected individuals  $I_{\text{ODE}}(t)$ at time $t$. We relate this to actual observed data, such as the number of students reported sick (in the case of 1978 Boarding School Data) $I_{\text{obs}}(t)$.
+
+**NOTE: Real world observational data is always noisy**
+
+We model the number of students reported sick using a Negative Binomial distribution, which accounts for variability in the data exceeding what would be expected under a simpler Poisson model (Adjusting for overdispersion) :
+
+$$
+I_{\text{obs}}(t) \sim \text{NegBin}(I_{\text{ODE}}(t), \phi)
+$$ This formulation gives us $p({Y} \mid \theta)$, where $\theta$ includes not only the transmission rates ($\beta, \gamma$) but also $\phi$, the parameter controlling the degree of dispersion in the Negative Binomial distribution.
+
+\newpage
+
+### **ASIDE: Addressing overdispersion within a Poisson Likelihood**
+
+#### Poisson-Gamma Mixture Overdispersion Derivation
+
+To derive the Poisson-Gamma mixture model and show how it accounts for overdispersion, we start by defining the Poisson distribution and the Gamma distribution.
+
+###### **Poisson Distribution**
+
+A random variable ( $Y$ ) follows a Poisson distribution with rate parameter ( $\lambda$ ) if its probability mass function (pmf) is given by:
+
+$$
+P(Y = y \mid \lambda) = \frac{\lambda^y e^{-\lambda}}{y!}, \quad y = 0, 1, 2, \ldots
+$$
+
+###### **Gamma Distribution**
+
+A random variable $\Lambda$ follows a Gamma distribution with shape parameter $(\alpha )$ and rate parameter $(\beta)$ if its probability density function (pdf) is given by:
+
+$$
+f(\Lambda \mid \alpha, \beta) = \frac{\beta^\alpha \Lambda^{\alpha - 1} e^{-\beta \Lambda}}{\Gamma(\alpha)}, \quad \Lambda > 0
+$$
+
+where $(\Gamma(\alpha)$ is the Gamma function.
+
+###### **Poisson-Gamma Mixture**
+
+To account for overdispersion in the Poisson distribution, we assume that the rate parameter ( $\lambda$ ) itself is a random variable following a Gamma distribution. This leads to the Poisson-Gamma mixture model.
+
+The joint distribution of $( Y  \ and \ \Lambda)$ is:
+
+$$
+P(Y = y, \Lambda = \lambda) = P(Y = y \mid \lambda) f(\lambda \mid \alpha, \beta)
+$$
+
+Marginalizing over $( \lambda )$, we obtain the marginal distribution of ( Y ): $$
+P(Y = y) = \int_0^\infty P(Y = y \mid \lambda) f(\lambda \mid \alpha, \beta) \, d\lambda
+$$
+
+Substituting the pmf of the Poisson distribution and the pdf of the Gamma distribution, we get:
+
+$$
+P(Y = y) = \int_0^\infty \frac{\lambda^y e^{-\lambda}}{y!} \cdot \frac{\beta^\alpha \lambda^{\alpha - 1} e^{-\beta \lambda}}{\Gamma(\alpha)} \, d\lambda
+$$
+
+Combining terms, we have:
+
+$$
+P(Y = y) = \frac{\beta^\alpha}{y! \, \Gamma(\alpha)} \int_0^\infty \lambda^{y + \alpha - 1} e^{-(\lambda + \beta) \lambda} \, d\lambda
+$$
+
+Recognizing the integral as the kernel of the Gamma function $( \Gamma(y + \alpha))$, we get:
+
+$$
+P(Y = y) = \frac{\beta^\alpha}{y! \, \Gamma(\alpha)} \cdot \frac{\Gamma(y + \alpha)}{(\beta + 1)^{y + \alpha}}
+$$
+
+Simplifying, we obtain the probability mass function of the negative binomial distribution:
+
+$$
+P(Y = y) = \frac{\Gamma(y + \alpha)}{\Gamma(\alpha) y!} \left( \frac{\beta}{\beta + 1} \right)^\alpha \left( \frac{1}{\beta + 1} \right)^y
+$$
+
+###### **Overdispersion**
+
+The negative binomial distribution naturally incorporates overdispersion. The mean and variance of ( Y ) are:
+
+$$
+E(Y) = \frac{\alpha}{\beta}, \quad \text{Var}(Y) = \frac{\alpha}{\beta} \left( 1 + \frac{1}{\beta} \right)
+$$
+
+The variance exceeds the mean, indicating overdispersion.
+
+Thus, the Poisson-Gamma mixture model provides a framework for modeling count data with overdispersion by mixing the Poisson distribution with a Gamma-distributed rate parameter, resulting in a `negative binomial distribution`.
+
+**References:**
+
+-   Balaji, R., & Czado, C. (n.d.). Overdispersion in Poisson Regression. Lecture notes, University of Colorado. [Retrieved from U Colorado](https://civil.colorado.edu/\~balajir/CVEN6833/lectures/c-czado-GLM-lectures/lec7-PoissonReg-overdispersion.pdf)
+
+-   AdamO. (2018, March 7). How to deal with overdispersion in Poisson regression: quasi-likelihood, negative binomial GLM, or subject-level random effect? Cross Validated.   [Retrieved from Stats Stackexchange](https://stats.stackexchange.com/questions/255/negative-binomial-glm-for-overdispersed-poisson-data)
+
+
+#### **END ASIDE**
+
+
+
+\newpage
+
+### Prior Distributions
+
+To complete our Bayesian SIR model, we utilize priors for each parameter, $\theta = (\beta, \gamma, \phi)$.
+
+An example is to assume that the recovery rate $\gamma$ follows a Normal distribution truncated at zero:
+$$
+\gamma \sim N(0.4, 0.5)
+$$ 
+
+It is truncated to ensure $\gamma$ is positive. This reflects a belief that the recovery rate has a high probability of being below 1, meaning most people recover within a day . These priors can be adjusted as more information becomes available: allowing us to become active participants in our research by updating these prior beliefs to get the most accurate representation of the ground reality .
+
+### Predictions and derived quantities
+
+After fitting the model and obtaining a posterior distribution for $\theta$, we can further derive additional quantities of interests.
+
+We can generate simulated predictions, $Y_{pred}$, and work out the plausible range of new observations (using the 95% credible intervals) : As these predictions are based on the posterior, $p(\theta \mid Y)$, our simulations account for uncertainty both in the data generating process and in our estimates of $\theta$. 
+
+Moreover, we compute a posterior distribution of predictions 
+
+$$
+  p( Y_{pred} \mid  Y) = \int p( Y_{pred} | \theta) p(\theta |  Y) d\theta
+$$
+
+Similarly, we can compute quantities that depend on the model parameters.
+
+We can also evaluate other quantities based on the model parameters. A critical measure is the basic reproduction number, $R_0$, which quantifies the average number of secondary infections that one infected person will cause in a wholly susceptible population over their infectious period.
+
+A value of $R_0 > 1$ implies a potentially widespread epidemic,
+
+whereas $R_0 < 1$ indicates that the infection is likely to extinguish over time.
+
+Through Bayesian analysis, we also establish a posterior distribution for $R_0$:
+
+$$
+  p(R_0 \mid  Y).
+$$
+
+
+### Coding SIR models in STAN (Prevelance Model)
+
+**Prevalence data reflects the number of infected individuals at a given time.**
+
+An ODE takes the form: 
+
+$$
+  \frac{\mathrm d y}{\mathrm d t} = f(t, y)
+$$ where $y$ are the *states*, in our example $y = (S, I, R)$, and $t$ is time. We also need an initial condition $y_0$ at $t_0$ and the times, $\tau$, at which we evaluate the solution.
+
+To specify an ODE in Stan, we first code $f$ in the `functions` block. This function must observe a strict signature:
+
+```{stan, eval=F, output.var="md"}
+real[] f(real time, real[] state, real[] theta,
+         real[] x_r, int[] x_i)
+```
+
+with
+
+-   `time`, $t$;
+
+-   `state`, the volumes in each compartment, $y$;
+
+-   `theta`, variables used to compute $f$, which depend on the model parameters;
+
+-   `x_r`, real variables used to evaluate $f$, which only depend on fixed data;
+
+-   `x_i`, integer values used to evaluate $f$, which only depend on fixed data.
+
+The ODEs for the SIR model is defined as follows:
+
+```{stan, eval=F, output.var="md"}
+functions {
+  real[] sir(real t, real[] y, real[] theta, 
+             real[] x_r, int[] x_i) {
+
+      real S = y[1];
+      real I = y[2];
+      real R = y[3];
+      real N = x_i[1];
+      
+      real beta = theta[1];
+      real gamma = theta[2];
+      
+      real dS_dt = -beta * I * S / N;
+      real dI_dt =  beta * I * S / N - gamma * I;
+      real dR_dt =  gamma * I;
+      
+      return {dS_dt, dI_dt, dR_dt};
+  }
+}
+```
+
+We evaluate the solution numerically by using one of Stan's numerical integrators.
+
+We will be using in for the Runge-Kutta 4$^\mathrm{th}$ /5$^\mathrm{th}$ order.
+
+[functions-old-ode-solver documentation](https://mc-stan.org/docs/2_24/functions-reference/functions-old-ode-solver.html)
+
+
+```{stan, eval=F, output.var="md"}
+  y = integrate_ode_rk45(sir, y0, t0, ts, theta, x_r, x_i);
+```
+
+with
+
+-   `sir`, the name of the function that returns the derivatives, $f$;
+
+-   `y0`, the initial condition;
+
+-   `t0`, the time of the initial condition;
+
+-   `ts`, the times at which we require the solution to be evaluated;
+
+-   `theta`, `x_r`, `x_i`, arguments to be passed to $f$.
+
+We have now gathered all the elements to solve our systems of ODEs.
+
+Given we are utilizing an SIR model, we assume
+
+-   total population remains constant
+
+-   the three derivatives $\frac{dS}{dt}$,$\frac{dI}{dt}$, $\frac{dR}{dt}$ sum up to $0$
+
+[As mentioned in the background information Assumptions of SIR & SEIR]
+
+We can use this fact to improve computational efficiency of the `sir` function by deriving the value of $\frac{dI}{dt}$ from $\frac{dS}{dt}$ and $\frac{dR}{dt}$
+
+```{stan, eval=F, output.var="md"}
+      real dS_dt = -beta * I * S / N;
+      real dR_dt =  gamma * I;
+      real dI_dt =  -(dS_dt + dR_dt);
+```
+
+We utilize the `data` block to store our outbreak data:
+
+```{stan, eval=F, output.var="md"}
+data {
+  int<lower=1> n_days;
+  real y0[3];
+  real t0;
+  real ts[n_days];
+  int N;
+  int cases[n_days];
+}
+
+```
+
+Subsequently, we utilize the`transformed data` block. In this example, we transform our data to match the signature of `sir` (with `x_r` being of length 0 because we have nothing to put in it).
+
+```{stan, eval=F, output.var="md"}
+transformed data {
+  real x_r[0];
+  int x_i[1] = { N };
+}
+
+```
+
+
+Finally, we can now code the model parameters in the `parameters` block.
+
+If you want some parameter to be bounded, and it is not already guaranteed by its prior, you need to specify `<lower=a, upper=b>` when declaring this parameter.
+
+**Note: this is how you put a truncated prior distribution on a parameter.**
+
+```{stan, eval=F, output.var="md"}
+parameters {
+  real<lower=0> gamma;
+  real<lower=0> beta;
+  real<lower=0> phi_inv;
+}
+```
+
+And then transforms of the parameters
+
+```{stan, eval=F, output.var="md"}
+transformed parameters{
+  real y[n_days, 3];
+  real phi = 1. / phi_inv;
+  {
+    real theta[2];
+    theta[1] = beta;
+    theta[2] = gamma;
+
+    y = integrate_ode_rk45(sir, y0, t0, ts, theta, x_r, x_i);
+  }
+}
+```
+
+With all the code above ready the ODE solution, $y$, is ready, we can now define the prior and sampling distribution.
+
+```{stan, eval=F, output.var="md"}
+model {
+  //priors
+  beta ~ normal(2, 1); //truncated at 0
+  gamma ~ normal(0.4, 0.5); //truncated at 0
+  phi_inv ~ exponential(5);//truncated at 0
+  
+  //sampling distribution
+  //col(matrix x, int n) - The n-th column of matrix x. Here the number of infected people
+  cases ~ neg_binomial_2(col(to_matrix(y), 2), phi);
+}
+
+```
+
+With the inference part of the model complete we can calculate the basic reproduction number, $R_0$, 
+
+and predictions for the number of cases in the `generated quantities` block:
+
+```{stan, eval=F, output.var="md"}
+generated quantities {
+  real R0 = beta / gamma;
+  real recovery_time = 1 / gamma;
+  real pred_cases[n_days];
+  pred_cases = neg_binomial_2_rng(col(to_matrix(y), 2) + 1e-5, phi);
+}
+```
+
+**Note:** Generated quantities use the results of inference / HMC sampling to generate the quantities coded.
+
+The above code is used to compile and save  a stan model called `SIR_Prevelance.stan`
+
+### SIR Model (Incidences vs Daily counts)
+
+The model described above focuses on representing the prevalence of the disease. However, when dealing with datasets that record the number of daily cases, we shift our focus to **incidence**. 
+
+
+**Incidence refers to the number of new cases occurring in a specific period.**
+
+To illustrate this, we will fit our basic SIR (Susceptible-Infectious-Recovered) model to COVID-19 data. In previous examples, such as modeling influenza, the data represented the number of students in bed at a given time, which corresponds to disease prevalence. In our new setting with COVID-19, we only have access to the number of new cases reported each day, which constitutes incidence data.
+
+In the SIR model, "incidence" is defined as the number of new cases of a disease that occur within a specific period, calculated by subtracting the total cases on day $n-1$ from the cases on day $n$
+
+$$ I_n = C_n - C_{n-1} $$
+
+In the SIR model, the incidence of the disease at time `t` is the
+number of individuals transitioning from the Susceptible compartment to the Infectious compartment at that time. 
+
+This change requires a modification of our model to reflect the daily incidence instead of cumulative cases.
+
+We add the following code in the `transformed parameters` block:
+
+```{stan, eval=F, output.var="md"}
+for (i in 1:n_days-1) 
+  incidence[i] = y[i, 1] - y[i + 1, 1]; //S(t) - S(t + 1)
+```
+
+We also modify the negative-binomial likelihood by fitting these incidence parameters to the data:
+
+```{stan, eval=F, output.var="md"}
+cases[1:(n_days-1)] ~ neg_binomial_2(incidence, phi);
+```
+
+This model above will be compiled into a file called `SIR_incidence.stan`
+
+**Note: We will use this model in the section relating to Covid 19 inference**
+
+**References:** 
+
+- Stan Development Team. (Leo Grinsztajn, Elizaveta Semenova, Charles C. Margossian, and Julien Riou). Boarding School Case Study. Stan Documentation. [Access Here](https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.html#stan_codes)
+
+- [Github Repository for the Stan Dev Team Case study](https://github.com/charlesm93/disease_transmission_workflow)
+
+
+### Building our Least Squares / Non Linear Regression SIR Model
+
+We will be using the `deSolve` library in R to implement our system of ODEs for our SIR model.
+
+SIR Model Function:
+
+This function computes the rates of change for Susceptible (S), Infected (I), and Recovered (R) compartments based on the current state and model parameters.
+
+Model Definition:
+
+-   **Define the SIR model dynamics** in the `closed.sir.model` function.
+
+-   **Error Function:** Implement the SSE function `sse.sir` that calculates the sum of squared errors between observed cases and model predictions.
+
+-   **Model Fitting:** Fit the SIR model to data using the optim function(which starts with initial guesses or starting values for the parameters) with Nelder-Mead optimization in `fit_and_plot_sir`.
+
+-   **Prediction and Plotting:** Generate and plot model predictions alongside actual data for visual comparison.
+
+
+Sum of Squared Errors (SSE) Function:
+
+```{r}
+# Define the SIR model function
+closed.sir.model <- function(t, x, params) {
+  S <- x[1]
+  I <- x[2]
+  R <- x[3]
+  beta <- params[1]
+  gamma <- params[2]
+  N <- params[3]  # Total population
+  dS <- -beta * S * I / N
+  dI <- beta * S * I / N - gamma * I
+  dR <- gamma * I
+  return(list(c(dS, dI, dR)))
+}
+```
+
+This function is used to calculate the fit of the model to the actual data by computing the sum of the squared differences between the observed data and the model's predictions.
+
+```{r}
+# Sum of Squared Errors (SSE) function
+sse.sir <- function(params0, data, N) {
+  times <- as.numeric(data$date - min(data$date)) + 1
+  cases <- data$cases
+  I0 <- cases[1]  # Initial number of infected individuals
+  S0 <- N - I0  # Initial number of susceptible individuals
+  R0 <- 0  # Initial number of recovered individuals
+
+  # Simulate the model
+  out <- as.data.frame(ode(y = c(S = S0, I = I0, R = R0), times = times, func = closed.sir.model, parms = c(beta = params0[1], gamma = params0[2], N), hmax = 0.1))
+  sse <- sum((out$I - cases)^2)
+  return(sse)
+}
+
+```
+
+**Parameter Optimization:**
+
+Uses optimization techniques to find the best-fit parameters (beta and gamma) that minimize the SSE, meaning they provide the best match between the model predictions and actual data.
+
+**Simulation and Plotting:**
+
+After determining the best-fit parameters, the SIR model is simulated over the observed period to generate predictions. These predictions are then plotted alongside the actual data to visually assess the fit.
+
+```{r}
+# Main function to fit SIR model and plot results
+fit_and_plot_sir <- function(data, N, initial_params = c(1.5e-3, 0.44)) {
+  # Optimization using Nelder-Mead method
+  fit <- optim(par = initial_params, fn = function(params) sse.sir(params, data, N), method = "Nelder-Mead")
+
+  # Generate predictions using the optimized parameters
+  days <- as.numeric(data$date - min(data$date)) + 1
+  model_output <- as.data.frame(ode(y = c(S = N - data$cases[1], I = data$cases[1], R = 0), times = days, func = closed.sir.model, parms = c(fit$par, N), hmax = 0.1))
+ # Print optimized parameters beta and gamma
+  cat(sprintf("Optimized beta: %f\nOptimized gamma: %f\n", fit$par[1], fit$par[2]))
+
+  # Plot actual vs. predicted
+  ggplot() +
+    geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+    geom_point(data = data, aes(x = days, y = cases, colour = "Actual"), size = 2) +
+    labs(title = "Actual vs. Predicted Infected Individuals",
+         x = "Day from Start",
+         y = "Number of Infected Individuals") +
+    scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+    theme_minimal()
+}
+```
+
+References:
+
+-   Choisy, M. (n.d.). SIR Model Simulation. RPubs. [Retrieved from here](https://rpubs.com/choisy/sir)
+-   Moroney, M. (2020, March 19). How to model an epidemic with R. freeCodeCamp. [Retrieved from here](https://www.freecodecamp.org/news/how-to-model-an-epidemic-with-r/)
+-   Bolker, B. (2011). EEID 2011 Simulation. McMaster University. [Retrieved from here](https://ms.mcmaster.ca/\~bolker/eeid/2011_eco/EEID2011_Simulation.pdf)
+
+
+\newpage 
+
+**Now that we have our base SIR models, let's fit them with the 1978 Influenza Boarding School Data and work on expanding the models from there to initiate our comparative Bayesian analysis to get an idea of Bayesian inference.**
+
+## 1978 Influenza Boarding School (SIR Approach)
+
+```{r}
+# Accessing the dataset
+data(influenza_england_1978_school)
+flu_data <- influenza_england_1978_school
+# Data wrangling
+
+flu_data <- influenza_england_1978_school
+
+flu_data <-flu_data %>%  select(date:in_bed) %>% rename(cases = in_bed )
+flu_data
+```
+
+### Fitting an SIR model using STAN(Bayesian Approach)
+
+We will be using our prevalence model, which tracks the number of people infected on a given day.
+
+```{r}
+model <- stan_model("Models/1978 Influenza/SIR_Prevelance.stan")
+```
+
+```{r}
+# total count of students
+N <- 763;
+cases <- flu_data$cases
+# times / number of days
+n_days <- length(cases) 
+t <- seq(0, n_days, by = 1)
+t0 = 0 
+t <- t[-1]
+
+#initial conditions
+i0 <- 1
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+
+# data for Stan
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+# number of MCMC steps
+niter <- 2000
+```
+
+```{r,message=FALSE,warning=FALSE}
+fit_sir_negbin <- sampling(model,
+                data = data_sir,
+                iter = niter,
+                chains = 4, 
+                seed = 0)
+
+```
+
+#### Reviewing the Posterior quantiles of our parameters and generated quantities
+
+```{r}
+pars=c('beta', 'gamma', "R0", "recovery_time")
+print(fit_sir_negbin, pars = pars)
+
+```
+
+Where
+
+`mean`: The average value of the posterior samples for the parameter. It provides an estimate of the central tendency.
+
+`se_mean`: The standard error of the mean, indicating the variability in the estimate of the mean. A lower value suggests more precise estimates.
+
+`sd`: The standard deviation of the posterior samples, reflecting the overall variability in the parameter estimates.
+
+`2.5%`: The 2.5th percentile of the posterior distribution, representing the lower bound of the 95% credible interval. This value indicates that there is a 2.5% chance that the parameter is below this value.
+
+`25%`: The 25th percentile (first quartile) of the posterior distribution. This value indicates that 25% of the posterior samples are below this value.
+
+`50%`: The median (50th percentile) of the posterior distribution, representing the middle value of the samples. It is a robust measure of central tendency.
+
+`75%`: The 75th percentile (third quartile) of the posterior distribution. This value indicates that 75% of the posterior samples are below this value.
+
+`97.5%`: The 97.5th percentile of the posterior distribution, representing the upper bound of the 95% credible interval. This value indicates that there is a 2.5% chance that the parameter is above this value.
+
+`n_eff`: The effective sample size, which indicates the number of independent samples in the posterior. Higher values suggest better mixing and more reliable estimates.
+
+`Rhat`: The potential scale reduction factor, which assesses the convergence of the Markov chains. Values close to 1 indicate good convergence; values significantly greater than 1 suggest potential issues with convergence.
+
+#### Mixing of markov chains and inference
+
+In Bayesian inference, it is crucial to assess the mixing of Markov chains to ensure that they are converging to the target posterior distribution. Poor mixing can indicate that the chains are not adequately exploring the parameter space, which can result in unreliable estimates.
+
+We use the stan_dens function to visualize the density plots of the parameter estimates from different chains. By examining these plots, we can assess whether the chains are mixing well. If the chains are well-mixed, the density plots for each chain should overlap significantly, indicating that each chain has converged to the same posterior distribution.
+
+```{r}
+stan_dens(fit_sir_negbin, pars = pars, separate_chains = TRUE)
+```
+
+In our case the chains have converged to the same posterior distribution with minor differences in the modes.
+
+#### Plotting the predicted cases vs actual cases
+
+```{r}
+# Create a data frame with summary statistics for the predicted cases
+smr_pred <- cbind(as.data.frame(summary(
+  fit_sir_negbin, pars = "pred_cases", probs = c(0.05, 0.5, 0.95))$summary), t, cases)
+
+# Clean up column names to remove special characters
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+# Plot the predictions with credible intervals
+ggplot(smr_pred, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'red', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'red') + 
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of students in bed")
+```
+
+**Predicted Cases vs. Actual Cases**
+
+KEY:
+
+-   **X-Axis (Day):** This represents the days in the time series of the influenza outbreak.
+
+-   **Y-Axis (Number of Students in Bed):** This represents the number of students who are in bed due to influenza on each day.
+
+-   **Red Ribbon (Uncertainty Interval):** The shaded red area shows the 90% credible interval (between the 5th and 95th percentiles) of the predicted number of cases from the SEIR model. This interval gives an idea of the uncertainty around the model’s predictions.
+
+-   **Red Line (Median Prediction):** The solid red line represents the median (50th percentile) predicted number of cases from the SEIR model. This is the most likely number of cases according to the model.
+
+-   **Black Points (Actual Cases):** The black points represent the actual observed number of students in bed due to influenza on each day.
+
+We can clearly see that our posterior median (the red line) very closely fits the actual prevalence counts over the days. The wide intervals highlight the uncertainty of our SIR model parameters and the predictions generated by them.
+
+We are using a negative binomial generating process here, which includes a special parameter to account for overdispersion. This is one reason why our intervals are so wide.
+
+If we were to use a Poisson data generating process, our intervals would be less wide but might result in a slightly different fit, potentially being less cautious depending on how one were to percieve this outbreak.
+
+#### Plotting the students in bed/ infected students predicted by our model
+
+```{r}
+# Parameters for the number of infected for each day
+params <- lapply(t, function(i){sprintf("y[%s,2]", i)}) 
+
+# Create a data frame with summary statistics for the number of infected students
+smr_y <- as.data.frame(summary(fit_sir_negbin, 
+                               pars = params, probs = c(0.05, 0.5, 0.95))$summary)
+# Clean up column names to remove special characters
+colnames(smr_y) <- make.names(colnames(smr_y)) # to remove % in the col names
+
+# Plot the number of infected students with credible intervals
+ggplot(smr_y, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'red', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'red') + 
+  labs(x = "Day", y = "Number of infected students")
+```
+
+**Predicted Number of Infected Students**
+
+KEY:
+
+-   **X-Axis (Day):** This represents the days in the time series of the influenza outbreak. Y-Axis (Number of Infected Students): This represents the number of students who are currently infectious on each day, as predicted by the SEIR model.
+
+-   **Red Ribbon (Uncertainty Interval):** The shaded red area shows the 90% credible interval (between the 5th and 95th percentiles) of the predicted number of infected students. This indicates the range within which the true number of infected students is expected to lie, with 90% probability.
+
+- **Red Line (Median Prediction):** The solid red line represents the median (50th percentile) predicted number of infected students from the SEIR model.
+
+#### What does this mean for an epidemiologist?
+
+In the analysis above, we use the Bayesian approach to predict the number of students in bed and the number of infected students over time.
+
+The Bayesian framework provides public health officials with credible intervals, which offer a range of plausible values for our predictions. These intervals are essential for informed decision-making.
+
+Bayesian credible intervals allow officials to understand the uncertainty associated with the predictions. If the interval is wide, it indicates greater uncertainty in our estimates, which might prompt more cautious decision-making. Conversely, a narrower interval suggests more confidence in the predictions, which might lead to less conservative actions.
+
+The length of the interval not only reflects the uncertainty about the predicted number of cases but also provides insights into the reliability of the model parameters. Understanding this uncertainty is crucial for public health officials as they balance the need for caution with the desire to avoid unnecessary restrictions.
+
+### Experimenting with a different liklihood(Poisson)
+
+**As our Analysis in this study is a comparative Bayesian Analysis let's experiment with a Poisson generating process**
+
+For a second, let's assume that overdispersion is non existent and let's modify the model to reflect that:
+
+-   We can take our existing prevalence model and simply modify the `model` section
+
+```{stan, eval=F, output.var="md"}
+//sampling distribution
+  //col(matrix x, int n) - The n-th column of matrix x. Here the number of infected people 
+  cases ~ poisson(col(to_matrix(y), 2));
+```
+
+-   remove `phi_inv` from the `parameters` block (the overdispersion parameter)
+
+```{stan, eval=F, output.var="md"}
+parameters {
+  real<lower=0> gamma;
+  real<lower=0> beta;
+}
+```
+
+-   We modify the `generated quantities` block to
+
+```{stan, eval=F, output.var="md"}
+generated quantities {
+  real R0 = beta / gamma;
+  real recovery_time = 1 / gamma;
+  real pred_cases[n_days];
+  for (i in 1:n_days) {
+    pred_cases[i] = poisson_rng(y[i, 2]);
+  }
+}
+
+```
+
+We name this new model `SIR_Prevelance_Poisson.stan` and compile it
+
+#### Sampling from the Poisson Model
+
+```{r}
+model_pois <- stan_model("Models/1978 Influenza/SIR_Prevelance_Poisson.stan")
+```
+
+```{r,message=FALSE,warning=FALSE}
+# Fitting the Poission generating proccess model with the same data
+fit_sir_pois <- sampling(model_pois,
+                data = data_sir,
+                iter = niter,
+                chains = 4, 
+                seed = 0)
+```
+
+#### Summary of our inference
+
+```{r}
+pars=c('beta', 'gamma', "R0", "recovery_time")
+print(fit_sir_negbin, pars = pars)
+```
+
+With the values being in a similar range as our Negative Binomial generating model, we get another perspective on our outbreak from a less conservative generating process.
+
+We will compare the two in detail shortly at the end of this section.
+
+With the Rhat = 1 for our parameters and transformed/generated parameters we have a good indication that the markov chains have mixed.
+
+#### A visual check on the chains
+
+```{r}
+stan_dens(fit_sir_pois, pars = pars, separate_chains = TRUE)
+
+
+```
+
+We can see that the chains have mixed with slight differences in the modes.
+
+### Least Squares: Why not use Least Squares as well?
+
+Before we proceed with a comparision of our two Bayesian models, let's utilize the much simpler deterministic least squares approach which finds its roots from non linear regression.
+
+We utilize the function, defined earlier, to fit a least squares SIR model to our dataset.
+
+This approach uses an initial guess for parameters $beta = 1.5\cdot 10^{-3}, \ \gamma = 0.44$
+
+```{r}
+# Using the function defined above 
+
+fit_and_plot_sir(flu_data,763,c(1.5e-3,.44))
+
+```
+
+The model fits very closely to the actual data points and accomplishes the goal of reducing the squared distance between the fitted line and the actual data.
+
+
+```{r,echo=FALSE}
+# Given optimized values
+optimized_beta <- 1.699742
+optimized_gamma <- 0.446839
+# Compute R0
+R0 <- optimized_beta / optimized_gamma
+
+# Compute recovery period
+recovery_period <- 1 / optimized_gamma
+
+# Given optimized values
+optimized_beta <- 1.699742
+optimized_gamma <- 0.446839
+
+# Compute R0
+R0 <- optimized_beta / optimized_gamma
+
+# Compute recovery period
+recovery_period <- 1 / optimized_gamma
+
+# Create a data frame
+least_squares_estimate <- data.frame(
+  Parameter = c("Beta", "Gamma", "R0", "Recovery Period"),
+  Estimate = c(optimized_beta, optimized_gamma, R0, recovery_period)
+)
+
+# Print the data frame
+#print("Least Square's Estimates")
+#print(least_squares_estimate)
+```
+
+Let's compare the least square estimates with the two bayesian posterior based estimates
+
+```{r,echo=FALSE}
+#pars=c('beta', 'gamma', "R0", "recovery_time")
+
+# Print summaries of the parameters for the negative binomial model
+#print("Negative Binomial Model")
+#print(fit_sir_negbin, pars = pars)
+# Print summaries of the parameters for the Poisson model
+#print("Poisson Model")
+#print(fit_sir_pois, pars = pars)
+```
+
+#### Stan SIR Fits Negative Binomial and Poisson
+
+```{r}
+print(fit_sir_negbin, pars = pars)
+```
+```{r}
+print(fit_sir_pois, pars = pars)
+```
+
+#### **Least Square's Estimates**
+
+```{r}
+print(least_squares_estimate)
+
+```
+
+
+
+### What does this all mean? Comparitive Bayesian vs Determinsitic Inference
+
+
+**Absolute Parameter Values:**
+
+
+- **Bayesian Inference using STAN(posterior mean) :**
+  - **Beta:**
+    - Negative Binomial: 1.74
+    - Poisson: 1.69
+  - **Gamma:**
+    - Negative Binomial: 0.54
+    - Poisson: 0.48
+  - **R0:**
+    - Negative Binomial: 3.23
+    - Poisson: 3.55
+  - **Recovery Time:**
+    - Negative Binomial: 1.86
+    - Poisson: 2.10
+- **Least Squares (LS):**
+  - **Beta:** 1.699742
+  - **Gamma:** 0.446839
+  - **R0:** 3.803925
+  - **Recovery Period:** 2.237943
+
+While Bayesian inference provides a distribution of parameter estimates, offering a more comprehensive view. On the other hand, Least Squares provides point estimates without accounting for parameter uncertainty.
+
+**Credible Intervals vs Point Estimates:**
+
+- **Bayesian Inference:**
+
+  - Provides credible intervals (e.g., 2.5%, 25%, 50%, 75%, 97.5%) for each parameter.
+  - Quantiles help in understanding the reliability and uncertainty of estimates.
+  
+  - Example: R0 for Negative Binomial: [2.73, 3.87], Poisson: [3.41, 3.71].
+- **Least Squares:**
+
+  - Offers point estimates with no inherent measure of uncertainty.
+  - Less informative for large-scale settings where understanding variability is crucial.
+
+**Ease of Computation:**
+
+- **Bayesian Inference:**
+
+  - More computationally intensive, requiring methods like NUTS in STAN.
+  - Produces richer information (distributions, credible intervals).
+
+- **Least Squares:**
+
+  - Simpler and faster to compute.
+  - Provides straightforward point estimates.
+
+**Comparison of Poisson vs Negative Binomial Models**
+
+**Optimism vs Conservatism:**
+- **Poisson Model:**
+ 
+  - Generally more optimistic due to its assumption of equal mean and variance.
+  - Estimates tend to be less conservative, potentially underestimating variability.
+  - Example: R0 mean = 3.55.
+
+- **Negative Binomial Model:**
+
+  - More conservative, accounting for over-dispersion (variance > mean).
+  - Provides more robust estimates with higher variability.
+  - Example: R0 mean = 3.23.
+
+**Interesting Parameter Estimation Observations:**
+
+- **Beta:** Slightly higher in Negative Binomial (1.74) vs Poisson (1.69), indicating a minor difference in growth rate estimation.
+
+- **Gamma:** Higher in Negative Binomial (0.54) vs Poisson (0.48), reflecting a more conservative approach in infection rate estimation.
+
+- **R0:** Higher in Poisson (3.55) vs Negative Binomial (3.23), showcasing the optimistic bias of the Poisson model.
+
+- **Recovery Time:** Lower in Negative Binomial (1.86) vs Poisson (2.10), indicating a more conservative estimate in the Negative Binomial model.
+
+**Conclusion:**
+
+- Bayesian methods offer detailed insights through distributions and credible intervals, enhancing reliability in parameter estimates, though they are computationally intensive.
+
+- Least Squares provides quick point estimates but lacks uncertainty quantification, which can be a limitation in large-scale analyses.
+
+- The Negative Binomial model is generally more conservative and better suited for over-dispersed data compared to the Poisson model, which is more optimistic but less reliable for variable data.
+
+
+
+
+## Building an SEIR Model(SEIR Prevelances)
+
+Let's take out initial model with weakly informative priors (`SIR_Prevelance.stan`) and modify it into an SEIR model.
+
+In simple words, we are accounting for the incubation period of the disease by adding another compartment to our ODE based model. 
+
+Let's break this process down into simple steps
+
+-   Modify the `functions` block to design an SEIR model instead an SIR model
+
+```{stan, eval=FALSE,output.var="md"}
+functions {
+  real[] seir(real t, real[] y, real[] theta, 
+              real[] x_r, int[] x_i) {
+
+    real S = y[1];
+    real E = y[2];
+    real I = y[3];
+    real R = y[4];
+    real N = x_i[1];
+    
+    real beta = theta[1];
+    real sigma = theta[2];
+    real gamma = theta[3];
+    
+    real dS_dt = -beta * I * S / N;
+    real dE_dt =  beta * I * S / N - sigma * E;
+    real dI_dt =  sigma * E - gamma * I;
+    real dR_dt =  gamma * I;
+    
+    return {dS_dt, dE_dt, dI_dt, dR_dt};
+  }
+}
+```
+
+1.  `dE_dt`: The rate of change for the exposed population is added. People move into this compartment from susceptible at a rate $\beta \cdot  I \cdot  S / N$ and transition to the infected state at a rate $\sigma \cdot E.$ This captures the dynamics where exposed individuals become infectious.
+
+2.  `dI_dt`: Now incorporates the inflow from the exposed state ($\sigma \cdot E$) and outflow to the recovered state ($\gamma \cdot  I$), correctly describing the transition from exposure to infection.
+
+-   We add `sigma` (also known as  `a`) as a parameter in the `parameters` block
+
+```{stan,eval = FALSE,output.var="md"}
+parameters {
+  real<lower=0> beta;
+  real<lower=0> sigma;
+  real<lower=0> gamma;
+  real<lower=0> phi_inv;
+}
+```
+
+-   We add prior(weakly informative) on `sigma `in our `model` block
+
+```{stan,eval = FALSE,output.var = "md"}
+model {
+  // priors
+  beta ~ normal(2, 1);
+  sigma ~ normal(0.5, 0.5);
+  gamma ~ normal(0.4, 0.5);
+  phi_inv ~ exponential(5);
+  
+  // sampling distribution
+  cases ~ neg_binomial_2(col(to_matrix(y), 3), phi);
+}
+```
+
+-   We modify the call to the `integrate_ode_rk45` function to call SEIR instead of SIR in the `transformed parameters` section
+
+```{stan,eval = FALSE,output.var="md"}
+transformed parameters {
+  real y[n_days, 4];
+  real phi = 1. / phi_inv;
+  {
+    real theta[3];
+    theta[1] = beta;
+    theta[2] = sigma;
+    theta[3] = gamma;
+
+    y = integrate_ode_rk45(seir, y0, t0, ts, theta, x_r, x_i);
+  }
+}
+```
+
+### Least Squares appraoch (SEIR)
+
+
+Let's re-write our SIR Least Squares Model function and modify it to accommodate the `E` compartment
+
+-   **Model Definition**: Define the SEIR model dynamics within the `seir.model` function. This function accounts for four compartments:
+
+    -   *Susceptible (S)*
+    -   *Exposed (E)*
+    -   *Infected (I)*
+    -   *Recovered (R)*
+    
+    
+The model parameters include the transmission rate (`beta`), incubation rate (`sigma`), and recovery rate (`gamma`), with the dynamics applied to a population of size `N`.
+
+-   **Error Function**: Implement the sum of squared errors (SSE) function `sse.seir` that calculates the discrepancy between observed cases and model predictions. This function uses the initial number of exposed and infected individuals derived from the data and simulates disease progression to evaluate fit.
+
+-   **Model Fitting**: Fit the SEIR model using the `optim` function with Nelder-Mead optimization, encapsulated in the `fit_and_plot_seir` function. Optimization starts from initial parameters, which may be based on empirical data or literature or just random guesses.
+
+-   **Prediction and Plotting**: Generate and plot model predictions alongside actual data for visual comparison using `ggplot2`. The function plots:
+
+    -   Predicted number of infected individuals as a line graph.
+    -   Actual data as points.
+
+```{r}
+
+  # SEIR model definition
+  seir.model <- function(t, x, params) {
+    S <- x[1]
+    E <- x[2]
+    I <- x[3]
+    R <- x[4]
+    beta <- params[1]
+    sigma <- params[2]  # Rate of movement from E to I (incubation rate)
+    gamma <- params[3]
+    N <- params[4]  # Total population
+  
+    dS <- -beta * S * I / N
+    dE <- beta * S * I / N - sigma * E
+    dI <- sigma * E - gamma * I
+    dR <- gamma * I
+    return(list(c(dS, dE, dI, dR)) )
+  }
+  
+  # Sum of Squared Errors (SSE) function for SEIR
+  sse.seir <- function(params0, data, N) {
+    times <- as.numeric(data$date - min(data$date)) + 1
+    cases <- data$cases
+    E0 <- 0   # Initial number of exposed individuals
+    I0 <- cases[1]  # Initial number of infectious individuals
+    S0 <- N - I0 - E0  # Initial number of susceptible individuals
+    R0 <- 0  # Initial number of recovered individuals
+  
+    # Simulate the model
+    out <- as.data.frame(ode(y = c(S = S0, E = E0, I = I0, R = R0), times = times, func = seir.model, parms = c(beta = params0[1], sigma = params0[2], gamma = params0[3], N), hmax = 0.1))
+    sse <- sum((out$I - cases)^2)
+    return(sse)
+  }
+  
+  # Main function to fit SEIR model and plot results
+  fit_and_plot_seir <- function(data, N, initial_params = c(0.5, 1/3,  0.56 )) {
+    # Optimization using Nelder-Mead method
+    fit <- optim(par = initial_params, fn = function(params) sse.seir(params, data, N), method = "Nelder-Mead")
+    
+    # Print optimized parameters beta, sigma, and gamma
+    cat(sprintf("Optimized beta: %f, sigma: %f, gamma: %f\n", fit$par[1], fit$par[2], fit$par[3]))
+  
+    # Generate predictions using the optimized parameters
+    days <- as.numeric(data$date - min(data$date)) + 1
+    model_output <- as.data.frame(ode(y = c(S = N - data$cases[1], E = 0, I = data$cases[1], R = 0), times = days, func = seir.model, parms = c(fit$par, N), hmax = 0.1))
+  
+    # Plot actual vs. predicted
+    ggplot() +
+      geom_line(data = model_output, aes(x = days, y = I, colour = "Predicted"), size = 1) +
+      geom_point(data = data, aes(x = days, y = cases, colour = "Actual"), size = 2) +
+      labs(title = "Actual vs. Predicted Infected Individuals (SEIR Model)",
+           x = "Day from Start",
+           y = "Number of Infected Individuals") +
+      scale_color_manual(values = c("red", "blue"), labels = c("Actual", "Predicted")) +
+      theme_minimal()
+  }
+
+```
+
+## 1978 Influenza Boarding School (SEIR Approach)
+
+Utilizing the SIER model that we just built above let's fit it to our data to determine whether we gain additional insights or not.
+
+### SEIR (STAN/ Bayesian Approach with Prevelance)
+
+#### Compiling and simulating from the model
+
+```{r}
+model_SEIR_prevelance <- stan_model("Models/1978 Influenza/SEIR_Prevelance.stan")
+```
+
+```{r}
+# total count of students
+N <- 763;
+cases <- flu_data$cases
+
+# times
+n_days <- length(cases)
+t <- seq(0, n_days, by = 1)
+t0 = 0 
+t <- t[-1]
+
+# initial conditions
+i0 <- 1
+e0 <- 2  # Assuming some exposed individuals initially
+s0 <- N - i0 - e0
+r0 <- 0
+y0 = c(S = s0, E = e0, I = i0, R = r0)
+
+# data for Stan
+data_seir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+# number of MCMC steps
+niter <- 2000
+```
+
+```{r,message=FALSE,warning=FALSE}
+fit_seir_negbin <- sampling(model_SEIR_prevelance,
+                data = data_seir,
+                iter = niter,
+                chains = 4, 
+                seed = 0)
+
+```
+
+#### Summary of our Fit and Posterior Quantiles
+
+```{r}
+pars=c('beta', 'sigma', 'gamma', "R0", "incubation_period", "recovery_time")
+print(fit_seir_negbin, pars = pars)
+```
+
+The Rhat values indicate our chains from the simulation have mixed i.e. they converged to a relatively similar place in the parameter space for the posterior distribution of our parameters
+
+```{r}
+stan_dens(fit_seir_negbin, pars = pars, separate_chains = TRUE)
+```
+ We can visibly confirm that the chains have mixed and have been sampling from the true posterior distribution. The overlap and similar shapes of the distributions from different chains suggest good mixing, indicating that the Bayesian inference on the SIER model with the data via STAN has converged properly.
+
+
+
+
+#### Visualzing our simulated data
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(
+  fit_seir_negbin, pars = "pred_cases", probs = c(0.05, 0.5, 0.95))$summary), t, cases)
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'red', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'red') + 
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Number of students in bed")
+```
+
+**Predicted Cases vs. Actual Cases**
+
+-   **X-Axis (Day):** This represents the days in the time series of the influenza outbreak.
+
+-   **Y-Axis (Number of Students in Bed):** This represents the number of students who are in bed due to influenza on each day.
+
+-   **Red Ribbon (Uncertainty Interval):** The shaded red area shows the 90% credible interval (between the 5th and 95th percentiles) of the predicted number of cases from the SEIR model. This interval gives an idea of the uncertainty around the model’s predictions.
+
+-   **Red Line (Median Prediction):** The solid red line represents the median (50th percentile) predicted number of cases from the SEIR model. This is the most likely number of cases according to the model.
+
+-   **Black Points (Actual Cases):** The black points represent the actual observed number of students in bed due to influenza on each day.
+
+
+
+From the visual above we can see it fits the data similar to the SIR model with the negative binomial generating function.
+
+
+```{r}
+params <- lapply(t, function(i){sprintf("y[%s,3]", i)}) # number of infected for each day
+smr_y <- as.data.frame(summary(fit_seir_negbin, 
+                               pars = params, probs = c(0.05, 0.5, 0.95))$summary)
+colnames(smr_y) <- make.names(colnames(smr_y)) # to remove % in the col names
+
+ggplot(smr_y, mapping = aes(x = t)) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = 'red', alpha = 0.35) +
+  geom_line(mapping = aes(x = t, y = X50.), color = 'red') + 
+  labs(x = "Day", y = "Number of infected students")
+```
+
+**Predicted Number of Infected Students**
+
+-   **X-Axis (Day):** This represents the days in the time series of the influenza outbreak. Y-Axis (Number of Infected Students): This represents the number of students who are currently infectious on each day, as predicted by the SEIR model.
+
+-   **Red Ribbon (Uncertainty Interval):** The shaded red area shows the 90% credible interval (between the 5th and 95th percentiles) of the predicted number of infected students. This indicates the range within which the true number of infected students is expected to lie, with 90% probability.
+
+- **Red Line (Median Prediction):** The solid red line represents the median (50th percentile) predicted number of infected students from the SEIR model.
+
+
+
+#### Why should we use an SEIR model if it fits just as good as an SIR model?
+
+- **Inclusion of the Exposed State (E):**
+  - The SEIR model includes an additional compartment for exposed individuals (E) who have been infected but are not yet infectious.
+  - This allows the model to capture the incubation period, which is the time between exposure and becoming infectious.
+
+- **Additional Information from the Incubation Period:**
+  - The incubation period is a crucial metric for understanding the dynamics of an outbreak.
+  - Knowing the incubation period helps in:
+    - Planning and implementing quarantine and isolation measures effectively.
+    - Predicting the delay between exposure and the onset of infectiousness.
+    - Estimating the time window for contact tracing and other control measures.
+
+- **Enhanced Modeling of Disease Dynamics:**
+  - The SEIR model provides a more detailed and realistic representation of the disease progression.
+  - It accounts for the fact that individuals are not immediately infectious upon exposure, which is an important consideration for diseases with a significant incubation period.
+
+- **Better Fit for Real-World Data:**
+  - The SEIR model is often a better fit for real-world epidemiological data, particularly for diseases where the incubation period is substantial (such as Covid 19).
+  - It helps in making more accurate predictions about the spread of the disease and the effectiveness of control measures.
+
+
+
+### SEIR (Least Squares Approach)
+
+With our initial guesses for the 3 model parameters as
+
+-   $\beta$ = 0.5
+
+-   $\sigma$ = 1/3
+
+-   $\gamma$ = 0.56
+
+We utilize the functions defined earlier for our SEIR model fit
+
+```{r}
+fit_and_plot_seir(flu_data,763 )
+```
+
+When we look at our approach here, our function did not constrain the parameters to be always greater than 0 and follow a certain range based on scientific literature for influenza.
+
+**The optimized parameter values make no sense, especially the unusually high** $\gamma$.
+
+This was done on purpose to talk about one of the biggest limitations of least squares optimization for fitting an ODE based model.
+
+This process follows a system of differential equations and we have a data generating process for which we have observations and we want to reduce the squared loss/error/ L2 loss: this makes it a `non-convex` optimization scenario.
+
+#### The curse of the initial guesses
+
+Lets cheat a little / make an educated guess or use our prior beliefs and utilize our Bayesian model to give us a good slice of our parameter space to optimize in, hopefully closer to the ground reality or as the frequentists say the true parameter value.
+
+We will be leveraging our posterior medians of the parameters as our so-called `priors / educated guesses` for the Least Squares Method.
+
+Lets see how well does this do:
+
+```{r}
+beta = 3.33            
+sigma = 1.14            
+gamma = 0.65  
+
+fit_and_plot_seir(flu_data,763,c(beta,sigma,gamma))
+```
+
+The fit gets closer to what happened at the boarding school in 1978.
+
+```{r, echo=FALSE}
+# Optimized parameters
+beta <- 5.444933
+sigma <- 0.769432
+gamma <- 0.468372
+
+# Calculating R0
+R0 <- beta / gamma
+
+# Calculating the incubation period (1/sigma gives the average duration in the exposed state)
+incubation_period <- 1 / sigma
+
+
+
+# Print the results
+cat("Optimized parameters:\n")
+cat(sprintf("R0 (Basic Reproduction Number): %f\n", R0))
+cat(sprintf("Incubation Period: %f days\n", incubation_period))
+
+```
+
+**Limitations of Nelder-Mead and Least Squares Fitting of SIR,SEIR & ODE based compartmental Models**
+
+-   **Common Use of Nelder-Mead**:
+    - Many epidemiological studies utilize the Nelder-Mead algorithm for least squares fitting of SIR and SEIR models due to its simplicity and gradient-free optimization.
+    - [Another Example of a Study utilizing Nelder-Mead](https://iopscience.iop.org/article/10.1088/1742-6596/1893/1/012016/pdf)
+   
+-   **Issues with Parameter Constraints**:
+    -   Nelder-Mead does not inherently constrain parameters, leading to non-sensical values such as $\gamma$ being extremely high (e.g., 4000), which are unrealistic based on scientific literature for influenza and other diseases.
+    -   This issue is more pronounced in SEIR models due to the added complexity compared to simpler SIR models.
+
+-   **Local Optimization Limitations**:
+    -   Nelder-Mead, like many local optimization algorithms, can easily get trapped in local minima, failing to find the global minimum in non-convex landscapes.
+    -   Other local optimization methods, such as `BFGS`, often require gradient information and may not perform well with limited data or complex models typical in epidemiology.
+
+-   **Non-Convex Optimization Objective**:
+    -   Least squares optimization for fitting ODE-based models often results in a non-convex optimization problem, making it prone to getting trapped in local minima.
+    -   Reliable initial guesses are critical for obtaining a good fit, but these are often difficult to determine without extensive domain knowledge.
+
+-   **Limitations of Initial Guesses**:
+    -   The effectiveness of Nelder-Mead heavily relies on the quality of initial parameter guesses. Poor initial guesses can lead to suboptimal fits and incorrect parameter estimates.
+    -   Informative priors or constraints are needed but are not straightforward to implement with Nelder-Mead.
+
+-   **Computational Expense**:
+    -   More sophisticated methods to overcome these limitations, such as global optimization techniques or constraint handling, are computationally expensive.
+    -   Bayesian approaches, although computationally intensive, provide a more robust framework for incorporating prior information and uncertainty in parameter estimates.
+
+
+### Conclusion - Pivot to Bayesian Approach
+
+-   The Bayesian approach allows for the incorporation of prior knowledge and the estimation of parameter distributions, providing more realistic and scientifically plausible parameter estimates.
+
+-   Bayesian methods, such as Markov Chain Monte Carlo (MCMC), can better navigate the non-convex landscape and provide a more comprehensive understanding of parameter uncertainty.
+
+### References
+
+-   [Limitations of Gradient Free Optimization with Nelder-Mead](https://math.stackexchange.com/questions/2419838/what-are-the-limitations-of-using-gradient-free-optimization-functions)
+-   [Deterministic epidemic models overestimate the basic reproduction number of observed outbreaks](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11024615/)
+
+## New York City (NYC) Covid 19 Wave 1
+
+The COVID-19 pandemic represents a defining global health crisis of recent times, profoundly altering the mundane worldwide. Characterized by its rapid transmission and significant societal impacts, the pandemic prompted widespread governmental and individual responses. The complexity of the virus, coupled with its capacity for mutation and varied transmission dynamics, introduces substantial variability and noise into related datasets.
+
+Effective modeling of this pandemic necessitates accommodations for multiple factors—including virus evolution,underreporting, response measures (lockdowns), and other dynamic elements—to accurately reflect the characteristics and impact of the outbreaks.
+
+
+
+### Exploring the data and the dynamics of the outbreak
+
+We will be exploring one such initial outbreak from NYC in 2020. 
+
+```{r,warning=FALSE,message=FALSE}
+nyc_df <- read_csv("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/paper/Data/NYC_Gov/cases-by-day.csv")
+# Formatting the date into a proper date format
+nyc_df %>% mutate(date_of_interest = as.Date(date_of_interest, format = "%m/%d/%Y"))->nyc_df 
+# selecting the columns we need
+
+nyc_df %>% select(date_of_interest,CASE_COUNT) %>% rename(date = date_of_interest, cases = CASE_COUNT )->covid_df
+
+covid_df<- covid_df %>% filter(date <= as.Date("2020-06-25"))
+
+# This is around the time the first wave had seemingly ended
+covid_df
+```
+**Visualizing the Outbreak**
+
+```{r}
+covid_df %>% ggplot() + geom_bar(mapping =aes(x = date,y=cases),fill = "red",color = "orange", stat = "identity") + labs(y = "Number of Cases")
+```
+With the frequent fluctuations in the number of cases as the time goes on, there is definitely a lot more going on than what we can see in that picutre and our objective is to leverage Bayesian tools to capture it the best possible way we can. 
+
+
+### SIR using least squares
+
+Let's start off by establishing a baseline using our Determinsitic Gradient Free Least Squares Optimization to see what the simplest and the quickest method can do for us. This serves as a baseline and we will work our way upwards to a much more informative model. 
+
+
+```{r}
+
+
+fit_and_plot_sir(covid_df,8.773e6 )  # Population of New York City in 2020 is added
+```
+
+### SEIR using least squares
+
+```{r}
+fit_and_plot_seir(covid_df,8.7773e6)
+```
+
+From the visuals presented, it is evident that employing a simplistic deterministic approach to model the pandemic's first wave yields limited insights. The complexity and variability inherent in the data necessitate more sophisticated modeling techniques to capture the dynamics accurately.
+
+References:
+
+-  [Identification of COVID-19 spread mechanisms based on first-wave data, simulation models, and evolutionary algorithms](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0279427)
+
+
+\newpage
+
+With the initial benchmarks established, our research pivots from refining deterministic models to exploring the capabilities of Bayesian models.
+
+Our analysis harnesses the power of the Stan programming language using the case study guide which focuses on a detailed examination of COVID-19 in Switzerland.
+
+Utilizing both SIR and SEIR models, we follow methodologies similar to those presented in the [Boarding School Case Study](https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.htm) provided by the Stan documentation. 
+
+This investigation seeks to capture the complex dynamics of the pandemic through a rigorous Bayesian lens, contextualized within 
+New York City.
+
+### Basic SIR model of Incidences for Covid 19 NYC
+
+We start off simple and look at setting up a Bayesian baseline for the Covid 19 inference in NYC utilizing the SIR model we designed at the very beginning `SIR_incidence.stan` and see how well the dynamics of the first wave are captured by this model. 
+
+#### Preparing the SIR data
+
+```{r}
+### Initial parameter values  
+
+N <- N <- 8.773e6  # Population of New York 
+
+i0 <- 1 # Assuming one infected person started it all
+s0 <- N - i0
+r0 <- 0
+y0 = c(S = s0, I = i0, R = r0)
+```
+
+#### Extracting the data for Stan Model
+
+```{r}
+# Cases
+cases <- covid_df$cases
+
+# times
+n_days <- length(cases)
+
+t <- seq(1, n_days, by = 1)
+t0 = 0
+t <- t
+
+data_sir <- list(n_days = n_days, y0 = y0, t0 = t0, ts = t, N = N, cases = cases)
+
+```
+
+#### Compiling and Sampling from the MODEL
+
+```{r}
+model_SIR_incidence <- stan_model("/Users/varundatta/Desktop/STAD94/Bayesian_Repo/paper/Models/Covid 19/SIR_incidence.stan")
+
+
+```
+
+```{r}
+covid_fit_SIR <-  sampling(model_SIR_incidence, 
+                        data_sir,
+                        iter = 2000,
+                        seed = 0)
+```
+
+#### Summary of the Fit and inference
+
+```{r}
+print(covid_fit_SIR,pars =c("beta","gamma","R0","recovery_time"))
+```
+
+The model estimates an $R_0$ of 5.73 (mean), which is significantly higher than the values reported in the literature. According to studies, the estimated $R_0$ for SARS-CoV-2/ Covid 19 generally ranges from 0.4 to 4.6, with an average around 2.63 This discrepancy indicates that the model is overshooting the transmission rate.
+
+Possible reasons for this overestimation could include inaccuracies in the assumed values of $\beta$ and $\gamma$, or the need for more nuanced modeling to better capture the dynamics of COVID-19 transmission in NYC during this period.
+
+Additionally, the recovery time estimate of 12.82 days is consistent with clinical observations, but the high $R_0$ suggests a potential misalignment in the parameter space.
+
+References
+
+- Mahase, E. (2020). Covid-19: What is the R number? BMJ. [Retrieved from here](https://www.bmj.com/content/369/bmj.m1891)
+
+- [Identification of COVID-19 spread mechanisms based on first-wave data, simulation models, and evolutionary algorithms](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0279427)
+
+- "Estimating the basic reproduction number for COVID-19 in Western Europe." PLOS ONE. [Available at](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0242128.)
+
+
+#### Trace plots of log posterior distribution and gamma,beta
+
+We check the trace plots to see if all 4 of our chains have mixed properly
+
+```{r}
+traceplot(covid_fit_SIR, pars = c("gamma", "beta", "lp__"))
+```
+
+We can indeed confirm that the chains have mixed and are sampling from the same distribution.
+
+#### Visualizing the fit 
+
+To add on to the interpretation above, let's look at the visualize fit of predicted vs actual cases to see how good of a fit it is visually.
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(covid_fit_SIR, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+```
+
+We can clearly see that the predictions of the model that we utilized are off by a few orders of magnitude. Simply put our model is too simple to properly capture the dynamics of the outbreak which brought life to a standstill in NYC.
+
+This suggests the need for further refinement of the model to ensure it accurately reflects the transmission dynamics observed in the real world.
+
+### Improving our SIR model
+
+
+We can aim to improve the model by incorporating or adjusting or modifying a few key elements of the model to get a much better understanding of the outbreak.
+
+
+-   **UNDERREPORTING**:
+    -   During the early days of the pandemic, there was significant underreporting of cases due to various reasons, including lack of tests, resources, and varying levels of infection severity.
+    -   This underreporting can be modeled by incorporating a parameter for the detection rate, which can help adjust our estimates to better reflect the true number of infections
+
+-   **PRIORS**:
+    -   So far, we've been using weakly informative priors on our parameters in our model, which worked well with influenza data but don't work as well with the COVID-19 pandemic.
+    -   For this, we will refer to the scientific literature from the initial days of the pandemic and the initial outbreaks
+
+-   **MODEL**:
+    -   We also know that the SIR model is simply insufficient for this scenario as it is common knowledge that COVID-19 symptoms don't show up immediately due to an incubation period, which can last up to 14 days before individuals become infectious.
+    -   To account for this, we will switch to the SEIR model (Susceptible-Exposed-Infectious-Recovered), which incorporates an incubation period to more accurately simulate the disease dynamics.
+
+-   **RESTRICTIONS**:
+    -   There were lockdown restrictions imposed in NYC to essentially bring down the $R_0$ by keeping most of the population inside their homes.
+    -   These interventions need to be explicitly modeled to capture their impact on the transmission dynamics. By including a variable to account for the reduction in contact rates due to lockdowns, we can better estimate the effect of these restrictions.
+
+Let's start by implementing the first major change:
+
+#### Incorporating underreporting
+
+We add a new parameter `p_reported` as the proportion of cases of covid 19 which end up in our data with respect to the ground reality of cases.
+
+The `parameters` code block becomes:
+
+```{stan, eval=F, output.var="md"}
+parameters {
+  real<lower=0> gamma;
+  real<lower=0> beta;
+  real<lower=0> phi_inv;
+  real<lower=0, upper=1> p_reported; // proportion of infected (symptomatic) people reported
+}
+```
+
+The incidence computation in the `transformed parameters` block becomes:
+
+```{stan, eval=F, output.var="md"}
+for (i in 1:n_days-1){
+    incidence[i] =  (y[i, 1] - y[i+1, 1]) * p_reported;
+  }
+```
+
+We give `p_reported` a weakly-informative $\beta(1, 2)$ prior, which indicates that we are quite uncertain about this parameter, except that it's between 0 and 1 and shouldn't be too close to 1. In the `model` block:
+
+```{stan, eval=F, output.var="md"}
+p_reported ~ beta(1, 2);
+```
+
+#### Incorportating incubation time and varying initial infections with Informative Priors.
+
+We transform the SIR model into a SEIR model, where people are *Exposed* before being infected. We suppose that *Exposed* people are not contagious, whereas *Infectious* people are. Furthermore, we suppose that people are reported as soon as they become *Infectious*.
+
+We add a parameter $a$, where $\frac{1}{a}$ corresponds to the average time between being infected and becoming infectious (for simplicity we also use $\frac{1}{a}$ as the time between being infected and being reported).
+
+SEIR equations become:
+
+$$
+\begin{aligned}
+ \frac{dS}{dt} &= -\beta  S \frac{I}{N}\\
+ \frac{dE}{dt} &= \beta S \frac{I}{N} - a E\\
+ \frac{dI}{dt} &= aE - \gamma  I \\
+ \frac{dR}{dt} &= \gamma I
+\end{aligned}
+$$
+
+We know from the literature that the incubation time (average time between infection and symptoms) and generation time (average time between the symptom onsets of the infectious and the infected) are around 5 days. Therefore, the time between infection and infectiousness should not be underestimated.
+
+Until now, we have only used weakly-informative priors. To refine our model, we will adjust our prior on $a$. Based on domain knowledge, we specify our prior on the inverse of $a$. We choose the informative prior ( $\text{inv}(a) \sim {N}(6, 1)$ ), which means there is a priori a greater than 99% chance that our incubation time is between 3 and 9 days.
+
+**References for the prior:**
+
+-   Qifang Bi, Yongsheng Wu, Shujiang Mei, Chenfei Ye, Xuan Zou, Zhen Zhang, Xiaojian Liu, Lan Wei, Shaun A Truelove, Tong Zhang, et al. "Epidemiology and transmission of COVID-19 in Shenzhen, China: Analysis of 391 cases and 1,286 of their close contacts." *MedRxiv*, 2020. Tapiwa Ganyani, Cecile Kremer, Dongxuan Chen, Andrea Torneri, Christel Faes, Jacco Wallinga, and Niel Hens. "Estimating the generation interval for COVID-19 based on symptom onset data." *medRxiv*, 2020.
+
+The incidence is now the number of people leaving the E compartment, i.e $E(t) - E(t+1) + S(t) - S(t+1)$\[\^11\].
+
+-   E(t) - E(t+1) is the number of people leaving the E compartment minus the number of people entering E.
+
+-   S(t) - S(t+1) is the number of people entering E
+
+```{stan, eval=F, output.var = "md"}
+  for (i in 1:n_days-1){
+    incidence[i] = -(y[i+1, 2] - y[i, 2] + y[i+1, 1] - y[i, 1]) * p_reported; //E(t) - E(t+1) + S(t) - S(t+1)
+  }
+```
+
+We also allow the initial number of infected and exposed people to vary: we add parameters $i_0$ and $e_0$, with weakly informative priors $N(0, 10)$
+
+Thus the call to the ODE solver becomes:
+
+```{stan, eval=F, output.var = "md"}
+//real theta[3] = {beta, gamma, a}; //slow
+//y = integrate_ode_rk45(sir, y0, t0, ts, theta, x_r, x_i); 
+real theta[5] = {beta, gamma, a, i0, e0}; //fast
+y = integrate_ode_rk45(sir, rep_array(0.0, 4), t0, ts, theta, x_r, x_i);
+```
+
+And the SEIR code becomes:
+
+```{stan, eval=F, output.var="md"}
+  real[] sir(real t, real[] y, real[] theta, 
+             real[] x_r, int[] x_i) {
+
+      real N = x_i[1];
+      
+      real beta = theta[1];
+      real gamma = theta[2];
+      real a = theta[3];
+      real i0 = theta[4];
+      real e0 = theta[5];
+      
+      real init[4] = {N - i0 - e0, e0, i0, 0}; // we reconstruct y0
+      real S = y[1] + init[1];
+      real E = y[2] + init[2];
+      real I = y[3] + init[3];
+      real R = y[4] + init[4];
+      
+      real dS_dt = -beta * I * S / N;
+      real dE_dt =  beta * I * S / N - a * E;
+      real dI_dt = a * E - gamma * I;
+      real dR_dt =  gamma * I;
+      
+      return {dS_dt, dE_dt, dI_dt, dR_dt};
+  }
+```
+
+#### Modelling for Lockdown Measures
+
+We model decreasing transmission due to governmental control measure by a logistic function: $\beta(t) = f(t) * \beta$, with $f(t) = \eta + (1 - \eta) * \frac{1}{1 + exp(\xi * (t - t_1 - \nu))}$, where $\eta$ is the decrease of transmission while control measures are fully in place, $\xi$ is the slope of the decrease, and $\nu$ is the delay (after the date of introduction of control measures) until the measures are 50% effective.
+
+In Stan, in the `functions` code block we add:
+
+```{stan, eval=F, output.var="md"}
+real switch_eta(real t, real t1, real eta, real nu, real xi) {
+    return(eta+(1-eta)/(1+exp(xi*(t-t1-nu))));
+}
+```
+
+We add weakly-informative priors on the three parameters. $\eta \sim \beta(2.5, 4)$ which means we expect governmental measures to reduce transmission, but not all the way to zero. $\nu \sim exponential(1/5)$ which means the delay should be around a week but could be lower or quite higher. $\xi \sim \mathcal{U}(0.5, 1.5)$, which means the slope has to be positive.
+
+We save all the changes above into a final model `SEIR_Forcing_Informative`
+
+### Fitting our Improved SEIR model
+
+```{r}
+date_switch <- "2020-03-23" # date of introduction of control measures IN NYC
+
+tswitch <- covid_df %>% filter(date < date_switch) %>% nrow() + 1 # convert time to number
+
+data_forcing <- list(n_days = n_days, t0 = t0, ts = t, N = N, cases = cases, tswitch = tswitch)
+```
+
+
+For practical reasons you can find the model fitting proccess in the `NYC SEIR PAPER.html` or `NYC SEIR PAPER.qmd` file as this model takes an upwards of 1 hour to simulate due to the computational complexity added due to our logistic function, approximately 120 days of data and other parameters.
+
+This is the code used to run the simulation
+```{r, eval=FALSE,output.var="md"}
+fit_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4)
+```
+
+
+
+```{r}
+fit_forcing_loaded <- readRDS("stan_model_fit_forcing1.rds")
+```
+
+
+#### Model Diagnostics
+
+```{r}
+check_hmc_diagnostics(fit_forcing_loaded)
+```
+It recommends us to increase the adapt delta value in order to mitigate the divergences. 
+
+As per [Adapt Delta ManPage](https://mc-stan.org/rstanarm/reference/adapt_delta.html) 
+
+
+`In general you should not need to change adapt_delta unless you see a warning message about divergent transitions, in which case you can increase adapt_delta from the default to a value closer to 1 (e.g. from 0.95 to 0.99, or from 0.99 to 0.999, etc). The step size used by the numerical integrator is a function of adapt_delta in that increasing adapt_delta will result in a smaller step size and fewer divergences. Increasing adapt_delta will typically result in a slower sampler, but it will always lead to a more robust sampler.`
+
+With that bit of troubleshooting taken care of let's increase the value closer to 1 and re-sample from our posterior using HMC.
+
+
+
+### Simulation with the increased adapt_delta hyperparameter value
+
+The code below demonstrates how one can change adapt delta. 
+
+```{r, eval=FALSE,output.var="md"}
+fit_forcing <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4,
+                        control = list(adapt_delta = 0.9999)
+                        )  
+# Increase adapt_delta to reduce divergences
+```
+
+
+```{r}
+fit_forcing_modified <- readRDS("stan_model_fit_forcing2.rds")
+```
+
+
+Before we make any inferences let's run a similar HMC diagnostics function as before on this fit
+
+```{r}
+check_hmc_diagnostics(fit_forcing_modified)
+```
+This tells us that 96.5% of our iterations have saturated the maximum tree depth which is by default 10. 
+
+- **Purpose of `max_treedepth`:**
+  - Controls the maximum depth of the binary tree used in the No-U-Turn Sampler (NUTS), limiting the number of leapfrog steps to prevent excessively long execution times.
+
+- **Default Setting:**
+  - Default value is 10, resulting in a maximum of $2^{10} = 1024$ leapfrog steps.
+
+ Warning Indicators
+- **Premature Termination:**
+  - Hitting the maximum tree depth suggests the sampler is terminating trajectories prematurely, which can indicate model misspecification or a highly complex posterior distribution.
+  
+  
+This implies we should increase the value to prevent the sampler from terminating trajectories prematurely.
+
+
+References: 
+
+- [Stan documentation on MCMC Sampling](https://mc-stan.org/docs/2_28/reference-manual/hmc-chapter.html)
+
+- [Stan Discussion on the role of "max_treedepth" in No-U-Turn Sampler](https://discourse.mc-stan.org/t/the-role-of-max-treedepth-in-no-u-turn/24155)
+
+### Simulation with an increased tree depth
+
+
+This is the code that we are going to execute:
+
+
+```{r, eval=FALSE,output.var="md"}
+fit_final <- sampling(model_forcing, 
+                        data_forcing, 
+                        iter=1500,
+                        seed=4,  control = list(adapt_delta = 0.9999,max_treedepth =15  
+                                          # Increase adapt_delta to reduce divergences
+                                      ))  # Increase max_treedepth to avoid saturation
+```
+
+
+```{r}
+fit_final <- readRDS("stan_model_fit_forcing3.rds")
+```
+
+```{r}
+check_hmc_diagnostics(fit_final)
+```
+
+Now that there are no divergences or saturated binary trees, we can interpret the results of our inference.
+
+
+#### Summary of our inference
+
+
+```{r}
+print(fit_final,pars = c("beta", "gamma", "a", "p_reported", "nu", "xi", "eta","R0","recovery_time"))
+```
+We can see all our parameters and their quantiles. We can clearly see that the highest Rhat value here is 1.01 for beta and gamma indicating that all 4 of our Markov chains have mixed and we can trust the inference. We will do a visual inspection of the mixing of chains later.
+
+
+#### Plotting and visualizing our fit
+
+```{r}
+smr_pred <- cbind(as.data.frame(summary(fit_final, pars = "pred_cases", probs = c(0.025, 0.05, 0.1, 0.5, 0.9, 0.95, 0.975))$summary), t=1:(n_days-1), cases = cases[1:length(cases)-1])
+colnames(smr_pred) <- make.names(colnames(smr_pred)) # to remove % in the col names
+
+ggplot(smr_pred, mapping = aes(x = t)) +
+  #geom_ribbon(aes(ymin = X2.5., ymax = X97.5.), fill = c_dark, ) +
+  geom_ribbon(aes(ymin = X5., ymax = X95.), fill = "red", alpha=0.35) +
+  #geom_ribbon(aes(ymin = X10., ymax = X90.), fill = c_light) +
+  # geom_line(mapping = aes(x = t, y = X50.), color = "red") +
+  geom_point(mapping = aes(y = cases)) +
+  labs(x = "Day", y = "Incidence")
+
+```
+**Legend:**
+
+- **Red Ribbon (5th to 95th Percentile):** The red shaded area represents the uncertainty interval from the 5th to the 95th percentile of the predicted cases.
+- **Points:** The points represent the actual observed cases for each day.
+
+The figure above clearly exhibits a much better fit to the actual data compared to the earlier SIR model(which was off by a few orders of magnitude). Our improvements to the model have clearly helped the HMC sampler explore the right slice of the parameter space.
+
+The incidence around day 15 to day 35, as indicated by the red ribbon, shows a much higher uncertainty in the number of daily cases (as the ribbon is wider). This can be attributed to the lockdown not having been fully in effect, underreporting, along with a high effective reproduction number ($R_t$).
+
+To test this theory, let's explore the average reproduction number value using the effective reproductive number(R effective: `generated quantity`) after the lockdown in NYC went into effect.
+
+
+#### Checking the impact of lockdown measures with $R_{eff}$
+
+
+```{r}
+fit_final %>% 
+  spread_draws(Reff[n_days]) %>% 
+  group_by(n_days) %>% 
+  summarise(R0_mean = mean(Reff), R09 = quantile(Reff, 0.95), R01 = quantile(Reff, 0.05)) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = n_days, ymin = R01, ymax = R09), fill ="RED", alpha=0.35)+
+  geom_line(mapping = aes(n_days, R0_mean), color = "RED") +
+  geom_vline(aes(xintercept = tswitch))+labs(
+    title = "Effective Reproduction Number Over Time",
+    x = "Days",
+    y = "Effective Reproduction Number (R_eff)"
+  ) +
+  theme_minimal()
+```
+
+We can think of $R_{eff}$ as the average $R_0$ as time goes on. 
+
+- **Before Lockdown:**
+  - The $R_{eff}$ as the intial $R_0$ started high.
+  - Posterior median $R_{eff}$ is around 6.5 to 7.
+
+- **After Lockdown Implementation:**
+  - A significant decrease in $R_{eff}$ is observed.
+  - The  $R_{eff}$ drops closer to 1.5.
+  - This indicates the effectiveness of the lockdown in reducing transmission rates.
+
+- **Graph Interpretation:**
+  - The steep decline in $R_{eff}$ post-lockdown highlights the impact of restrictive measures.
+  - The posterior median provides a central estimate, showing clear reduction trends.
+
+
+
+#### Comparing the priors and posterior distributions of our parameters
+
+```{r}
+n = 3000
+prior = tibble(
+  beta = abs(rnorm(n,2,1)),
+  gamma = abs(rnorm(n,.4,.5)),
+  a = abs(rnorm(n,.4,.5)),
+  phi_inv = rexp(n,5),
+  p_reported = rbeta(n, 1, 2),
+  eta = rbeta(n, 2.5, 4),
+  nu = rexp(n,1./5),
+  xi = .5 + rbeta(n,1, 1)
+) %>%
+  pivot_longer(everything()) %>%
+  mutate(type="Prior")
+
+pars = c("beta","gamma","phi_inv","a","p_reported","eta","nu","xi")
+samp =
+  extract(fit_final,pars) %>%
+  as.data.frame() %>%
+  pivot_longer(everything()) %>%
+  mutate(type="Posterior") %>%
+ bind_rows(prior) %>%
+  mutate(name=factor(name,levels=pars),
+         type=factor(type,levels=c("Prior","Posterior")))
+
+ggplot(samp) +
+  geom_density(aes(x=value,fill=type),alpha=.8) +
+  facet_wrap(~name,scale="free",ncol=4) +
+  scale_fill_manual(values=c("BLUE","ORANGE")) +
+  scale_y_continuous(expand=expansion(c(0,.05))) +
+  labs(x="Value",y="Probability density",fill=NULL) +
+  theme(legend.position="bottom")
+```
+
+We can clearly see the posterior distributions for our model parameters share the same slice of the parameter space as the prior distributions as seen by the overlapping of the densities. 
+
+```{r}
+traceplot(fit_final, pars = c("beta", "gamma", "a", "p_reported", "nu", "xi", "eta","lp__"))
+```
+The trace plot for each parameter and the log posterior gives us an alternative view of how the chains have mixed and are effectively sampling from the same posterior distribution as they have converged.
+```{r}
+fit_final %>% 
+  spread_draws(pred_cases[n_days]) %>% 
+  left_join(tibble(cases = cases, n_days = 1:length(cases))) %>% 
+  group_by(n_days, .chain) %>% 
+  summarise(cases = mean(cases), pred_mean = mean(pred_cases), pred_9 = quantile(pred_cases, 0.95), pred_1 = quantile(pred_cases, 0.05)) %>% 
+   ggplot(aes(x = n_days)) +
+   geom_ribbon(aes(ymin = pred_1, ymax = pred_9), fill = "ORANGE", alpha=0.35)+
+   geom_line(mapping = aes(y=pred_mean), color = "ORANGE")+
+   geom_point(mapping = aes(y=cases), size=0.1)+
+  facet_wrap(~.chain)
+
+```
+Finally, one can also look at the actual vs simulated cases for each chain, ideally we want as little variability between all 4 as possible as that is an indicator of a good model fit and more reliable inference. 
+
+
+We can clearly see that Bayesian inference has clearly gone above and beyond the capabilities of our simple deterministic models. Not only do we get more insight into the uncertainty about certain important measures like $R_0$,Incubation period and Recovery time but we are also able to get a much more closer fit to the actual data as our model accounts for underreporting and lockdown measures among other important facets of the outbreak.
+
+# Conclusion
+
+In this study, we applied Bayesian inference using the STAN modeling framework to analyze COVID-19 and influenza data, contrasting its effectiveness against traditional least squares and more straightforward optimization methods. Our findings emphasize the strengths of Bayesian inference, particularly in managing parameter uncertainty and integrating complex model dynamics, which are crucial in epidemiological forecasting. Bayesian methods provided superior predictive accuracy and model flexibility compared to least squares, while also offering more comprehensive insights into parameter distributions than simpler optimization techniques. These results demonstrate the power of Bayesian inference as an essential tool in epidemiological modeling, offering substantial advantages in flexibility, reliability, and depth of analysis, essential for informing effective public health decisions.
+
+# Areas of future exploration or possible extensions
+
+
+Some future areas of explorations include but are not limited to
+
+**Utilizing Data from Serological Surveys:**
+
+Leverage data from serological surveys to gain better insights into the impact of lockdowns and general disease prevalence. This data can provide a more accurate picture of the spread and control of diseases.
+
+**Creating a Beginner-Friendly R Library for STAN:**
+
+Develop an R library that simplifies the use of STAN scripts: the library would allow users to input priors and handle visualizations and Hamiltonian Monte Carlo (HMC) troubleshooting in the back-end, making STAN more accessible to beginners.
+
+**SEAIR Model for COVID-19:**
+
+Implement the SEAIR model, which includes an additional compartment for asymptomatic individuals. This is crucial for diseases like COVID-19, where asymptomatic individuals can still transmit the virus.
+
+
+**Accounting for Vaccinations and Other Interventions:**
+
+ This will help in understanding and predicting the impact of these measures on disease spread.
+
+
+**Predictive Modeling and Validation:**
+
+Use current data to predict future trends and validate these predictions. This involves continuous model refinement and validation to ensure accuracy and reliability.
+
+# Web Appendix
+
+The Appendix with all the models and `quarto` scripts along with their rendered
+`html` outputs can be found here: [BayesianEpiDynamics Repository](https://github.com/Var-18/BayesianEpiDynamics)
