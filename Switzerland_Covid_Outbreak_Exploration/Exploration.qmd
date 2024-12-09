@@ -1,0 +1,35 @@
+---
+title: "Swiss Covid 19 Exploration"
+author: "Varun V. Datta"
+format: 
+  html: 
+    df-print: paged
+    embed-resources: true
+---
+
+```{r,message=FALSE}
+library(tidyverse)
+library(tidybayes)
+library(gridExtra)
+library(rstan)
+rstan_options (auto_write = TRUE)
+options (mc.cores = parallel::detectCores ())
+```
+
+# EDA
+
+```{r,message=FALSE}
+df_swiss <- read_csv("swiss_agg_data.csv")
+
+glimpse(df_swiss)
+```
+
+## Number of Cases
+
+```{r}
+df_swiss %>% 
+  ggplot() + 
+  geom_bar(mapping = aes(x = date, y = report_dt), fill = 'orange', color = 'blue', stat = "identity") +
+  labs(y="Number of reported cases")
+```
+
